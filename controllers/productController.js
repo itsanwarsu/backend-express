@@ -1,109 +1,164 @@
-// Create
 const Product = require("../models/Product");
 
-
+// =======================
+// CREATE PRODUCT
+// =======================
 exports.createProduct = async (req, res) => {
   try {
+    const {
+      name,
+      description,
+      price,
+      stock,
+      category,
+      image,
+    } = req.body;
 
-    const product = await Product.create(req.body);
+    if (!name || !price || !category) {
+      return res.status(400).json({
+        message: "Nama, harga, dan kategori wajib diisi",
+      });
+    }
 
-    res.status(201).json(product);
-
-  } catch(error) {
-
-    res.status(500).json({
-      message: error.message
+    const product = await Product.create({
+      name,
+      description,
+      price,
+      stock,
+      category,
+      image,
     });
 
+    res.status(201).json({
+      message: "Produk berhasil ditambahkan",
+      product,
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      message: error.message,
+    });
   }
 };
 
-// Read
-exports.getProducts = async (req,res)=>{
+// =======================
+// GET ALL PRODUCTS
+// =======================
+exports.getProducts = async (req, res) => {
+  try {
+    const keyword = req.query.search || "";
 
-  try{
-
-    const products = await Product.find();
-
-    res.json(products);
-
-  }catch(error){
-
-    res.status(500).json({
-      message:error.message
+    const products = await Product.find({
+      name: {
+        $regex: keyword,
+        $options: "i",
+      },
+      isActive: true,
+    }).sort({
+      createdAt: -1,
     });
 
+    res.status(200).json(products);
+
+  } catch (error) {
+    res.status(500).json({
+      message: error.message,
+    });
   }
-
 };
 
-// Read one
-exports.getProduct = async(req,res)=>{
+// =======================
+// GET PRODUCT BY ID
+// =======================
+exports.getProduct = async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
 
-try{
+    if (!product) {
+      return res.status(404).json({
+        message: "Produk tidak ditemukan",
+      });
+    }
 
-const product = await Product.findById(req.params.id);
+    res.status(200).json(product);
 
-res.json(product);
-
-
-}catch(error){
-
-res.status(500).json({
-message:error.message
-});
-
-}
-
+  } catch (error) {
+    res.status(500).json({
+      message: error.message,
+    });
+  }
 };
 
-// Update
-exports.updateProduct = async(req,res)=>{
+// =======================
+// UPDATE PRODUCT
+// =======================
+exports.updateProduct = async (req, res) => {
+  try {
+    const {
+      name,
+      description,
+      price,
+      stock,
+      category,
+      image,
+      isActive,
+    } = req.body;
 
-try{
+    const product = await Product.findByIdAndUpdate(
+      req.params.id,
+      {
+        name,
+        description,
+        price,
+        stock,
+        category,
+        image,
+        isActive,
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
 
-const product = await Product.findByIdAndUpdate(
-req.params.id,
-req.body,
-{
-new:true
-}
-);
+    if (!product) {
+      return res.status(404).json({
+        message: "Produk tidak ditemukan",
+      });
+    }
 
+    res.status(200).json({
+      message: "Produk berhasil diperbarui",
+      product,
+    });
 
-res.json(product);
-
-
-}catch(error){
-
-res.status(500).json({
-message:error.message
-});
-
-}
-
+  } catch (error) {
+    res.status(500).json({
+      message: error.message,
+    });
+  }
 };
 
-// Delete
-exports.deleteProduct = async(req,res)=>{
+// =======================
+// DELETE PRODUCT
+// =======================
+exports.deleteProduct = async (req, res) => {
+  try {
+    const product = await Product.findByIdAndDelete(req.params.id);
 
-try{
+    if (!product) {
+      return res.status(404).json({
+        message: "Produk tidak ditemukan",
+      });
+    }
 
-await Product.findByIdAndDelete(req.params.id);
+    res.status(200).json({
+      message: "Produk berhasil dihapus",
+    });
 
-
-res.json({
-message:"Product deleted"
-});
-
-
-}catch(error){
-
-res.status(500).json({
-message:error.message
-});
-
-}
-
+  } catch (error) {
+    res.status(500).json({
+      message: error.message,
+    });
+  }
 };
-
