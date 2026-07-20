@@ -50,6 +50,7 @@ exports.addToCart = async (req, res) => {
     }
 
     await cart.save();
+await cart.populate("items.product");
 
     res.json(cart);
   } catch (err) {
@@ -60,17 +61,113 @@ exports.addToCart = async (req, res) => {
 };
 
 exports.removeFromCart = async (req, res) => {
-  const { id } = req.params;
+  try {
+    const { id } = req.params;
 
-  const cart = await Cart.findOne({
-    user: req.user.id,
-  });
+    const cart = await Cart.findOne({
+      user: req.user.id,
+    });
 
-  cart.items = cart.items.filter(
-    (item) => item.product.toString() !== id
-  );
+    if (!cart) {
+      return res.status(404).json({
+        message: "Cart tidak ditemukan",
+      });
+    }
 
-  await cart.save();
+    cart.items = cart.items.filter(
+      (item) => item.product.toString() !== id
+    );
 
-  res.json(cart);
+    await cart.save();
+    await cart.populate("items.product");
+
+    res.json(cart);
+
+  } catch (err) {
+    res.status(500).json({
+      message: err.message,
+    });
+  }
+};
+
+exports.increaseQty = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const cart = await Cart.findOne({
+      user: req.user.id,
+    });
+
+    if (!cart) {
+      return res.status(404).json({
+        message: "Cart tidak ditemukan",
+      });
+    }
+
+    const item = cart.items.find(
+      (item) => item.product.toString() === id
+    );
+
+    if (!item) {
+      return res.status(404).json({
+        message: "Produk tidak ditemukan",
+      });
+    }
+
+    item.quantity++;
+
+    await cart.save();
+    await cart.populate("items.product");
+
+    res.json(cart);
+
+  } catch (err) {
+    res.status(500).json({
+      message: err.message,
+    });
+  }
+};
+
+exports.decreaseQty = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const cart = await Cart.findOne({
+      user: req.user.id,
+    });
+
+    if (!cart) {
+      return res.status(404).json({
+        message: "Cart tidak ditemukan",
+      });
+    }
+
+    const item = cart.items.find(
+      (item) => item.product.toString() === id
+    );
+
+    if (!item) {
+      return res.status(404).json({
+        message: "Produk tidak ditemukan",
+      });
+    }
+
+    if (item.quantity > 1) {
+      item.quantity--;
+    } else {
+      cart.items = cart.items.filter(
+        (item) => item.product.toString() !== id
+      );
+    }
+
+    await cart.save();
+    await cart.populate("items.product");
+
+    res.json(cart);
+
+  } catch (err) {
+    res.status(500).json({
+      message: err.message,
+    });
+  }
 };
