@@ -1,50 +1,95 @@
-require('dotenv').config(); // 1. Memuat variabel dari file .env
-const express = require('express');
-const mongoose = require('mongoose');
-const cors = require('cors');
-const authRoutes = require('./routes/auth'); // Hubungkan routes auth.js
-const hubungkanDB = require('./config/db'); // Import fungsi koneksi database
+require("dotenv").config();
+
+const express = require("express");
+const cors = require("cors");
+
+const hubungkanDB = require("./config/db");
+
+const authRoutes = require("./routes/auth");
 const productRoutes = require("./routes/product");
 const cartRoutes = require("./routes/cart");
 
-const app = express(); // 2. Inisialisasi 'app' HARUS di atas sebelum app.use apapun!
+const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 3. Pasang Middleware CORS dan Parsing JSON
-app.use(cors({
-    origin: '*', 
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning']
-}));
+// =======================
+// Database
+// =======================
+hubungkanDB();
+
+// =======================
+// Middleware
+// =======================
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "ngrok-skip-browser-warning",
+    ],
+  })
+);
 
 app.use(express.json());
+
+// Bypass warning ngrok
+app.use((req, res, next) => {
+  res.setHeader("ngrok-skip-browser-warning", "true");
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+
+  next();
+});
+
+// =======================
+// Routes
+// =======================
+app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/cart", cartRoutes);
 
-// 4. Jalankan middleware bypass ngrok
-app.use((req, res, next) => {
-    res.setHeader('ngrok-skip-browser-warning', 'true');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, ngrok-skip-browser-warning');
-
-    if (req.method === 'OPTIONS') {
-        return res.sendStatus(200);
-    }
-    next();
+// =======================
+// Health Check
+// =======================
+app.get("/", (req, res) => {
+  res.json({
+    message: "Backend Ecommerce API berjalan",
+  });
 });
 
-// 5. Jalankan Database dan Rute API
-hubungkanDB();
-app.use('/api/auth', authRoutes); 
-
-// Endpoint Dasar
-app.get('/', (req, res) => {
-    res.send('Server Node.js & MongoDB Anda berjalan lancar.');
+app.get("/health", (req, res) => {
+  res.json({
+    status: "OK",
+  });
 });
 
-// 6. Menjalankan Server
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server aktif di port ${PORT}`);
+// =======================
+// 404 Handler
+// =======================
+app.use((req, res) => {
+  res.status(404).json({
+    message: "Endpoint tidak ditemukan",
+  });
 });
 
+// =======================
+// Global Error Handler
+// =======================
+app.use((err, req, res, next) => {
+  console.error(err);
+
+  res.status(500).json({
+    message: "Terjadi kesalahan pada server",
+  });
+});
+
+// =======================
+// Start Server
+// =======================
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server berjalan di port ${PORT}`);
+});
