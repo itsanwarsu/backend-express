@@ -33,6 +33,7 @@ app.use(
 );
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // Parsing request body berupa form-urlencoded/form-data
 
 // Bypass warning ngrok
 app.use((req, res, next) => {
@@ -77,13 +78,14 @@ app.use((req, res) => {
 });
 
 // =======================
-// Global Error Handler
+// Global Error Handler (Pesan Error Lebih Detail)
 // =======================
 app.use((err, req, res, next) => {
-  console.error(err);
+  console.error("Global Error Handler Caught:", err);
 
-  res.status(500).json({
-    message: "Terjadi kesalahan pada server",
+  res.status(err.status || 500).json({
+    message: err.message || "Terjadi kesalahan pada server",
+    error: err,
   });
 });
 
@@ -93,3 +95,4 @@ app.use((err, req, res, next) => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server berjalan di port ${PORT}`);
 });
+
