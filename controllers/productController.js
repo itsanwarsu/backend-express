@@ -3,6 +3,25 @@ const cloudinary = require("../config/cloudinary");
 const streamifier = require("streamifier");
 
 // =======================
+// HELPER UPLOAD CLOUDINARY
+// =======================
+const uploadToCloudinary = (fileBuffer) => {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: "products",
+      },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+
+    streamifier.createReadStream(fileBuffer).pipe(stream);
+  });
+};
+
+// =======================
 // CREATE PRODUCT
 // =======================
 exports.createProduct = async (req, res) => {
@@ -21,19 +40,7 @@ exports.createProduct = async (req, res) => {
     };
 
     if (req.file) {
-      const result = await new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-          {
-            folder: "products",
-          },
-          (error, result) => {
-            if (error) return reject(error);
-            resolve(result);
-          }
-        );
-
-        streamifier.createReadStream(req.file.buffer).pipe(stream);
-      });
+      const result = await uploadToCloudinary(req.file.buffer);
 
       image = {
         url: result.secure_url,
@@ -50,14 +57,18 @@ exports.createProduct = async (req, res) => {
       image,
     });
 
-    res.status(201).json({
+    return res.status(201).json({
       message: "Produk berhasil ditambahkan",
       product,
     });
 
-  } catch (error) {
-    res.status(500).json({
-      message: error.message,
+  } catch (err) {
+    console.error("Upload/Create Error:", err);
+
+    return res.status(500).json({
+      message: "Terjadi kesalahan pada server",
+      error: err.message || err,
+      stack: err.stack,
     });
   }
 };
@@ -81,22 +92,21 @@ exports.getProducts = async (req, res) => {
 
     res.json(products);
 
-  } catch (error) {
-  console.error("UPLOAD ERROR:", error);
+  } catch (err) {
+    console.error("Get Products Error:", err);
 
-  res.status(500).json({
-    message: error.message,
-    stack: error.stack,
-  });
-}
+    res.status(500).json({
+      message: err.message,
+      stack: err.stack,
+    });
+  }
 };
 
 // =======================
-// GET PRODUCT
+// GET PRODUCT (Updated)
 // =======================
 exports.getProduct = async (req, res) => {
   try {
-
     const product = await Product.findById(req.params.id);
 
     if (!product) {
@@ -107,9 +117,16 @@ exports.getProduct = async (req, res) => {
 
     res.json(product);
 
-  } catch (error) {
+  } catch (err) {
+    // Tangani jika ID bukan format MongoDB valid
+    if (err.name === "CastError") {
+      return res.status(400).json({
+        message: "Format ID produk tidak valid",
+      });
+    }
+
     res.status(500).json({
-      message: error.message,
+      message: err.message,
     });
   }
 };
@@ -119,7 +136,6 @@ exports.getProduct = async (req, res) => {
 // =======================
 exports.updateProduct = async (req, res) => {
   try {
-
     const product = await Product.findById(req.params.id);
 
     if (!product) {
@@ -130,56 +146,54 @@ exports.updateProduct = async (req, res) => {
 
     let image = product.image;
 
+    // Upload gambar baru jika ada
     if (req.file) {
-
+      // Hapus gambar lama dari Cloudinary
       if (product.image?.public_id) {
-        await cloudinary.uploader.destroy(
-          product.image.public_id
-        );
+        await cloudinary.uploader.destroy(product.image.public_id);
       }
 
-      const result = await new Promise((resolve, reject) => {
-console.log("Cloudinary config:", cloudinary.config());
-        const stream = cloudinary.uploader.upload_stream(
-          {
-            folder: "products",
-          },
-          (error, result) => {
-            if (error) return reject(error);
-            resolve(result);
-          }
-        );
-
-        streamifier
-          .createReadStream(req.file.buffer)
-          .pipe(stream);
-
-      });
+      // Upload gambar baru
+      const result = await uploadToCloudinary(req.file.buffer);
 
       image = {
         url: result.secure_url,
         public_id: result.public_id,
       };
-
     }
 
-    product.name = req.body.name;
-    product.description = req.body.description;
-    product.price = req.body.price;
-    product.stock = req.body.stock;
-    product.category = req.body.category;
+    // Update data produk
+    product.name = req.body.name ?? product.name;
+    product.description =
+      req.body.description ?? product.description;
+
+    if (req.body.price !== undefined) {
+      product.price = Number(req.body.price);
+    }
+
+    if (req.body.stock !== undefined) {
+      product.stock = Number(req.body.stock);
+    }
+
+    product.category =
+      req.body.category ?? product.category;
+
     product.image = image;
 
     await product.save();
 
-    res.json({
+    return res.json({
       message: "Produk berhasil diperbarui",
       product,
     });
 
-  } catch (error) {
-    res.status(500).json({
-      message: error.message,
+  } catch (err) {
+    console.error("Update Product Error:", err);
+
+    return res.status(500).json({
+      message: "Terjadi kesalahan pada server",
+      error: err.message || err,
+      stack: err.stack,
     });
   }
 };
@@ -189,7 +203,6 @@ console.log("Cloudinary config:", cloudinary.config());
 // =======================
 exports.deleteProduct = async (req, res) => {
   try {
-
     const product = await Product.findById(req.params.id);
 
     if (!product) {
@@ -198,21 +211,25 @@ exports.deleteProduct = async (req, res) => {
       });
     }
 
+    // Hapus gambar dari Cloudinary jika ada
     if (product.image?.public_id) {
-      await cloudinary.uploader.destroy(
-        product.image.public_id
-      );
+      await cloudinary.uploader.destroy(product.image.public_id);
     }
 
+    // Hapus produk dari database
     await product.deleteOne();
 
-    res.json({
+    return res.json({
       message: "Produk berhasil dihapus",
     });
 
-  } catch (error) {
-    res.status(500).json({
-      message: error.message,
+  } catch (err) {
+    console.error("Delete Product Error:", err);
+
+    return res.status(500).json({
+      message: "Terjadi kesalahan pada server",
+      error: err.message || err,
+      stack: err.stack,
     });
   }
 };
