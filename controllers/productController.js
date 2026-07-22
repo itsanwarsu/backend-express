@@ -82,10 +82,13 @@ exports.getProducts = async (req, res) => {
     res.json(products);
 
   } catch (error) {
-    res.status(500).json({
-      message: error.message,
-    });
-  }
+  console.error("UPLOAD ERROR:", error);
+
+  res.status(500).json({
+    message: error.message,
+    stack: error.stack,
+  });
+}
 };
 
 // =======================
@@ -136,7 +139,7 @@ exports.updateProduct = async (req, res) => {
       }
 
       const result = await new Promise((resolve, reject) => {
-
+console.log("Cloudinary config:", cloudinary.config());
         const stream = cloudinary.uploader.upload_stream(
           {
             folder: "products",
