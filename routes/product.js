@@ -17,16 +17,9 @@ const {
 router.get("/", getProducts);
 router.get("/:id", getProduct);
 
-// Admin & Superadmin
-router.post("/", auth, admin, createProduct);
-router.put("/:id", auth, admin, updateProduct);
+// Admin
+router.post("/", auth, admin, upload.single("image"), createProduct);
+router.put("/:id", auth, admin, upload.single("image"), updateProduct);
 router.delete("/:id", auth, admin, deleteProduct);
-router.post(
-  "/products",
-  authMiddleware,
-  superAdminMiddleware,
-  upload.single("image"),
-  createProduct
-);
 
 module.exports = router;
