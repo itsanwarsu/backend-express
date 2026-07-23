@@ -39,7 +39,8 @@ exports.createProduct = async (req, res) => {
       public_id: "",
     };
 
-    if (req.file) {
+    // Pastikan req.file ada DAN buffer terdeteksi (Memory Storage Multer)
+    if (req.file && req.file.buffer) {
       const result = await uploadToCloudinary(req.file.buffer);
 
       image = {
@@ -51,8 +52,8 @@ exports.createProduct = async (req, res) => {
     const product = await Product.create({
       name,
       description,
-      price: Number(price),
-      stock: Number(stock),
+      price: Number(price) || 0,
+      stock: Number(stock) || 0,
       category,
       image,
     });
@@ -68,7 +69,6 @@ exports.createProduct = async (req, res) => {
     return res.status(500).json({
       message: "Terjadi kesalahan pada server",
       error: err.message || err,
-      stack: err.stack,
     });
   }
 };
@@ -97,13 +97,12 @@ exports.getProducts = async (req, res) => {
 
     res.status(500).json({
       message: err.message,
-      stack: err.stack,
     });
   }
 };
 
 // =======================
-// GET PRODUCT (Updated)
+// GET PRODUCT BY ID
 // =======================
 exports.getProduct = async (req, res) => {
   try {
@@ -118,7 +117,6 @@ exports.getProduct = async (req, res) => {
     res.json(product);
 
   } catch (err) {
-    // Tangani jika ID bukan format MongoDB valid
     if (err.name === "CastError") {
       return res.status(400).json({
         message: "Format ID produk tidak valid",
@@ -146,9 +144,8 @@ exports.updateProduct = async (req, res) => {
 
     let image = product.image;
 
-    // Upload gambar baru jika ada
-    if (req.file) {
-      // Hapus gambar lama dari Cloudinary
+    if (req.file && req.file.buffer) {
+      // Hapus gambar lama di Cloudinary jika ada
       if (product.image?.public_id) {
         await cloudinary.uploader.destroy(product.image.public_id);
       }
@@ -162,22 +159,18 @@ exports.updateProduct = async (req, res) => {
       };
     }
 
-    // Update data produk
     product.name = req.body.name ?? product.name;
-    product.description =
-      req.body.description ?? product.description;
+    product.description = req.body.description ?? product.description;
 
-    if (req.body.price !== undefined) {
+    if (req.body.price !== undefined && req.body.price !== "") {
       product.price = Number(req.body.price);
     }
 
-    if (req.body.stock !== undefined) {
+    if (req.body.stock !== undefined && req.body.stock !== "") {
       product.stock = Number(req.body.stock);
     }
 
-    product.category =
-      req.body.category ?? product.category;
-
+    product.category = req.body.category ?? product.category;
     product.image = image;
 
     await product.save();
@@ -190,10 +183,15 @@ exports.updateProduct = async (req, res) => {
   } catch (err) {
     console.error("Update Product Error:", err);
 
+    if (err.name === "CastError") {
+      return res.status(400).json({
+        message: "Format ID produk tidak valid",
+      });
+    }
+
     return res.status(500).json({
       message: "Terjadi kesalahan pada server",
       error: err.message || err,
-      stack: err.stack,
     });
   }
 };
@@ -211,12 +209,10 @@ exports.deleteProduct = async (req, res) => {
       });
     }
 
-    // Hapus gambar dari Cloudinary jika ada
     if (product.image?.public_id) {
       await cloudinary.uploader.destroy(product.image.public_id);
     }
 
-    // Hapus produk dari database
     await product.deleteOne();
 
     return res.json({
@@ -226,10 +222,16 @@ exports.deleteProduct = async (req, res) => {
   } catch (err) {
     console.error("Delete Product Error:", err);
 
+    if (err.name === "CastError") {
+      return res.status(400).json({
+        message: "Format ID produk tidak valid",
+      });
+    }
+
     return res.status(500).json({
       message: "Terjadi kesalahan pada server",
       error: err.message || err,
-      stack: err.stack,
     });
   }
 };
+
