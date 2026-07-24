@@ -1,3 +1,4 @@
+const env = require"dotenv";
 const cloudinary = require("cloudinary").v2;
 
 // Konfigurasi Cloudinary menggunakan environment variables
