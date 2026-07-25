@@ -1,10 +1,14 @@
 const Cart = require("../models/Cart");
 
+// Helper untuk validasi & parse quantity
+const parseQuantity = (qty) => {
+  const parsed = parseInt(qty, 10);
+  return isNaN(parsed) || parsed < 1 ? 1 : parsed;
+};
+
 exports.getCart = async (req, res) => {
   try {
-    let cart = await Cart.findOne({
-      user: req.user.id,
-    }).populate("items.product");
+    let cart = await Cart.findOne({ user: req.user.id }).populate("items.product");
 
     if (!cart) {
       cart = await Cart.create({
@@ -15,19 +19,16 @@ exports.getCart = async (req, res) => {
 
     res.json(cart);
   } catch (err) {
-    res.status(500).json({
-      message: err.message,
-    });
+    res.status(500).json({ message: err.message });
   }
 };
 
 exports.addToCart = async (req, res) => {
   try {
     const { productId, quantity } = req.body;
+    const addQty = parseQuantity(quantity);
 
-    let cart = await Cart.findOne({
-      user: req.user.id,
-    });
+    let cart = await Cart.findOne({ user: req.user.id });
 
     if (!cart) {
       cart = await Cart.create({
@@ -36,27 +37,23 @@ exports.addToCart = async (req, res) => {
       });
     }
 
-    const item = cart.items.find(
-      (i) => i.product.toString() === productId
-    );
+    const item = cart.items.find((i) => i.product.toString() === productId);
 
     if (item) {
-      item.quantity += quantity || 1;
+      item.quantity += addQty;
     } else {
       cart.items.push({
         product: productId,
-        quantity: quantity || 1,
+        quantity: addQty,
       });
     }
 
     await cart.save();
-await cart.populate("items.product");
+    await cart.populate("items.product");
 
     res.json(cart);
   } catch (err) {
-    res.status(500).json({
-      message: err.message,
-    });
+    res.status(500).json({ message: err.message });
   }
 };
 
@@ -64,29 +61,20 @@ exports.removeFromCart = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const cart = await Cart.findOne({
-      user: req.user.id,
-    });
+    const cart = await Cart.findOne({ user: req.user.id });
 
     if (!cart) {
-      return res.status(404).json({
-        message: "Cart tidak ditemukan",
-      });
+      return res.status(404).json({ message: "Cart tidak ditemukan" });
     }
 
-    cart.items = cart.items.filter(
-      (item) => item.product.toString() !== id
-    );
+    cart.items = cart.items.filter((item) => item.product.toString() !== id);
 
     await cart.save();
     await cart.populate("items.product");
 
     res.json(cart);
-
   } catch (err) {
-    res.status(500).json({
-      message: err.message,
-    });
+    res.status(500).json({ message: err.message });
   }
 };
 
@@ -94,37 +82,26 @@ exports.increaseQty = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const cart = await Cart.findOne({
-      user: req.user.id,
-    });
+    const cart = await Cart.findOne({ user: req.user.id });
 
     if (!cart) {
-      return res.status(404).json({
-        message: "Cart tidak ditemukan",
-      });
+      return res.status(404).json({ message: "Cart tidak ditemukan" });
     }
 
-    const item = cart.items.find(
-      (item) => item.product.toString() === id
-    );
+    const item = cart.items.find((item) => item.product.toString() === id);
 
     if (!item) {
-      return res.status(404).json({
-        message: "Produk tidak ditemukan",
-      });
+      return res.status(404).json({ message: "Produk tidak ditemukan di keranjang" });
     }
 
-    item.quantity++;
+    item.quantity += 1;
 
     await cart.save();
     await cart.populate("items.product");
 
     res.json(cart);
-
   } catch (err) {
-    res.status(500).json({
-      message: err.message,
-    });
+    res.status(500).json({ message: err.message });
   }
 };
 
@@ -132,42 +109,30 @@ exports.decreaseQty = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const cart = await Cart.findOne({
-      user: req.user.id,
-    });
+    const cart = await Cart.findOne({ user: req.user.id });
 
     if (!cart) {
-      return res.status(404).json({
-        message: "Cart tidak ditemukan",
-      });
+      return res.status(404).json({ message: "Cart tidak ditemukan" });
     }
 
-    const item = cart.items.find(
-      (item) => item.product.toString() === id
-    );
+    const item = cart.items.find((item) => item.product.toString() === id);
 
     if (!item) {
-      return res.status(404).json({
-        message: "Produk tidak ditemukan",
-      });
+      return res.status(404).json({ message: "Produk tidak ditemukan di keranjang" });
     }
 
     if (item.quantity > 1) {
-      item.quantity--;
+      item.quantity -= 1;
     } else {
-      cart.items = cart.items.filter(
-        (item) => item.product.toString() !== id
-      );
+      cart.items = cart.items.filter((i) => i.product.toString() !== id);
     }
 
     await cart.save();
     await cart.populate("items.product");
 
     res.json(cart);
-
   } catch (err) {
-    res.status(500).json({
-      message: err.message,
-    });
+    res.status(500).json({ message: err.message });
   }
 };
+
