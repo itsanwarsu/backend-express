@@ -37,7 +37,15 @@ exports.addToCart = async (req, res) => {
       });
     }
 
-    const item = cart.items.find((i) => i.product.toString() === productId);
+const item = cart.items.find((i) => {
+  // Ambil _id jika i.product adalah object hasil populate, atau gunakan i.product langsung jika masih ObjectId
+  const existingId = i.product._id ? i.product._id.toString() : i.product.toString();
+  
+  // Pastikan productId target juga berupa String murni
+  const targetId = typeof productId === 'object' ? productId._id.toString() : productId.toString();
+
+  return existingId === targetId;
+});
 
     if (item) {
       item.quantity += addQty;
