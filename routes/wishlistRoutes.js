@@ -7,7 +7,7 @@ const {
   removeWishlist,
 } = require("../controllers/wishlistController");
 
-const { protect } = require("../middleware/auth");
+const protect = require("../middleware/auth");
 
 router.get("/", protect, getWishlist);
 
