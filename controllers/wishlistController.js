@@ -54,6 +54,13 @@ const addWishlist = async (req, res) => {
       { new: true }
     ).populate("wishlist");
 
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User tidak ditemukan",
+      });
+    }
+
     res.status(200).json({
       success: true,
       message: "Produk berhasil ditambahkan ke wishlist",
