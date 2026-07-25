@@ -6,7 +6,7 @@ const Product = require("../models/Product");
 // =====================================
 const getWishlist = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).populate("wishlist");
+    const user = await User.findById(req.user.id).populate("wishlist");
 
     if (!user) {
       return res.status(404).json({
@@ -47,7 +47,7 @@ const addWishlist = async (req, res) => {
 
     // Tambahkan ke wishlist jika belum ada
     const user = await User.findByIdAndUpdate(
-      req.user._id,
+      req.user.id,
       {
         $addToSet: { wishlist: productId },
       },
@@ -82,7 +82,7 @@ const removeWishlist = async (req, res) => {
     const { productId } = req.params;
 
     const user = await User.findByIdAndUpdate(
-      req.user._id,
+      req.user.id,
       {
         $pull: { wishlist: productId },
       },
