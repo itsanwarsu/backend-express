@@ -2,13 +2,12 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
-
 const hubungkanDB = require("./config/db");
-
 const authRoutes = require("./routes/auth");
 const productRoutes = require("./routes/product");
 const cartRoutes = require("./routes/cart");
 const orderRoutes = require("./routes/order");
+const wishlistRoutes = require("./routes/wishlistRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -54,7 +53,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
-
+app.use("/api/wishlist", wishlistRoutes);
 // =======================
 // Health Check
 // =======================
