@@ -10,6 +10,13 @@ const conversationSchema = new mongoose.Schema(
       },
     ],
 
+    // Produk yang sedang dibahas
+    product: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Product",
+      required: true,
+    },
+
     lastMessage: {
       type: String,
       default: "",
@@ -22,6 +29,7 @@ const conversationSchema = new mongoose.Schema(
 
     lastMessageAt: {
       type: Date,
+      default: Date.now,
     },
   },
   {
