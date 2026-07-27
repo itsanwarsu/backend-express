@@ -8,8 +8,14 @@ const productRoutes = require("./routes/product");
 const cartRoutes = require("./routes/cart");
 const orderRoutes = require("./routes/order");
 const wishlistRoutes = require("./routes/wishlistRoutes");
+const conversationRoutes = require("./routes/conversationRoutes");
+const messageRoutes = require("./routes/messageRoutes");
+const http = require("http");
+const { Server } = require("socket.io");
+const { initializeSocket } = require("./socket/socket");
 
 const app = express();
+const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
 // =======================
@@ -54,6 +60,9 @@ app.use("/api/products", productRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/wishlist", wishlistRoutes);
+app.use("/api/conversations", conversationRoutes);
+app.use("/api/messages", messageRoutes);
+
 // =======================
 // Health Check
 // =======================
@@ -93,7 +102,15 @@ app.use((err, req, res, next) => {
 // =======================
 // Start Server
 // =======================
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server berjalan di port ${PORT}`);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "DELETE"],
+  },
 });
 
+initializeSocket(io);
+
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server berjalan di port ${PORT}`);
+});

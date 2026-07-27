@@ -7,12 +7,12 @@ const {
   removeWishlist,
 } = require("../controllers/wishlistController");
 
-const protect = require("../middleware/auth");
+const { protect: auth } = require("../middleware/auth");
 
-router.get("/", protect, getWishlist);
+router.get("/", auth, getWishlist);
 
-router.post("/:productId", protect, addWishlist);
+router.post("/:productId", auth, addWishlist);
 
-router.delete("/:productId", protect, removeWishlist);
+router.delete("/:productId", auth, removeWishlist);
 
 module.exports = router;
