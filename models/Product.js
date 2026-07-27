@@ -30,20 +30,26 @@ const ProductSchema = new mongoose.Schema(
       required: true,
     },
 
-image: {
-  url: {
-    type: String,
-    default: "",
-  },
-  public_id: {
-    type: String,
-    default: "",
-  },
-},
+    image: {
+      url: {
+        type: String,
+        default: "",
+      },
+      public_id: {
+        type: String,
+        default: "",
+      },
+    },
 
     isActive: {
       type: Boolean,
       default: true,
+    },
+
+    seller: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
     },
   },
   {

@@ -39,7 +39,6 @@ exports.createProduct = async (req, res) => {
       public_id: "",
     };
 
-    // Pastikan req.file ada DAN buffer terdeteksi (Memory Storage Multer)
     if (req.file && req.file.buffer) {
       const result = await uploadToCloudinary(req.file.buffer);
 
@@ -56,6 +55,7 @@ exports.createProduct = async (req, res) => {
       stock: Number(stock) || 0,
       category,
       image,
+      seller: req.user._id || req.user.id,
     });
 
     return res.status(201).json({
@@ -72,7 +72,6 @@ exports.createProduct = async (req, res) => {
     });
   }
 };
-
 // =======================
 // GET ALL PRODUCTS
 // =======================
@@ -106,7 +105,10 @@ exports.getProducts = async (req, res) => {
 // =======================
 exports.getProduct = async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id);
+    const product = await Product.findById(req.params.id).populate(
+      "seller",
+      "_id name email"
+    );
 
     if (!product) {
       return res.status(404).json({
@@ -128,7 +130,6 @@ exports.getProduct = async (req, res) => {
     });
   }
 };
-
 // =======================
 // UPDATE PRODUCT
 // =======================
