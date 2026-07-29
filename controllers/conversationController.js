@@ -77,3 +77,40 @@ exports.getConversations = async (req, res) => {
   }
 };
 
+
+exports.deleteConversation = async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const userId = req.user.id;
+
+    // 1. Cek apakah percakapan ada dan user merupakan anggota percakapan
+    const conversation = await Conversation.findOne({
+      _id: conversationId,
+      members: userId,
+    });
+
+    if (!conversation) {
+      return res.status(404).json({
+        message: "Percakapan tidak ditemukan atau kamu tidak memiliki akses.",
+      });
+    }
+
+    // 2. Hapus semua pesan dalam percakapan tersebut
+    await Message.deleteMany({ conversation: conversationId });
+
+    // 3. Hapus percakapan
+    await Conversation.findByIdAndDelete(conversationId);
+
+    return res.status(200).json({
+      message: "Percakapan berhasil dihapus.",
+      conversationId,
+    });
+  } catch (err) {
+    console.error("Delete Conversation Error:", err);
+    return res.status(500).json({
+      message: "Gagal menghapus percakapan.",
+      error: err.message,
+    });
+  }
+};
+
