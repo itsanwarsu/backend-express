@@ -3,7 +3,7 @@ const Message = require("../models/Message");
 
 exports.createConversation = async (req, res) => {
   try {
-    const { receiverId, productId } = req.body;
+    const { receiverId } = req.body;
     const senderId = req.user.id;
 
     if (!receiverId) {
@@ -18,36 +18,25 @@ exports.createConversation = async (req, res) => {
       });
     }
 
-    // 1. Cari percakapan berdasarkan anggota (pembeli & penjual) SAJA
+    // 1. Cari percakapan murni berdasarkan anggota (pembeli & penjual)
     let conversation = await Conversation.findOne({
       members: { $all: [senderId, receiverId] },
-    });
+    }).populate("members", "name email");
 
-    // 2. Jika percakapan sudah ada
+    // 2. Jika percakapan sudah ada, langsung kembalikan data percakapan tersebut
     if (conversation) {
-      // Selalu perbarui tautan produk jika ada productId baru yang dikirimkan
-      if (productId) {
-        conversation.product = productId;
-        await conversation.save();
-      }
-
-      // Populate ulang data anggota dan produk terbaru
-      conversation = await Conversation.findById(conversation._id)
-        .populate("members", "name email")
-        .populate("product");
-
       return res.status(200).json(conversation);
     }
 
-    // 3. Jika belum pernah ada percakapan sama sekali, buat baru
+    // 3. Jika belum pernah ada, buat dokumen percakapan baru
     conversation = await Conversation.create({
       members: [senderId, receiverId],
-      product: productId || null,
     });
 
-    conversation = await Conversation.findById(conversation._id)
-      .populate("members", "name email")
-      .populate("product");
+    conversation = await Conversation.findById(conversation._id).populate(
+      "members",
+      "name email"
+    );
 
     return res.status(201).json(conversation);
   } catch (err) {
@@ -66,7 +55,6 @@ exports.getConversations = async (req, res) => {
       members: req.user.id,
     })
       .populate("members", "name email")
-      .populate("product")
       .sort({ lastMessageAt: -1, updatedAt: -1 });
 
     return res.status(200).json(conversations);

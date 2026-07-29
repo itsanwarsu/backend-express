@@ -17,11 +17,19 @@ const messageSchema = new mongoose.Schema(
     text: {
       type: String,
       trim: true,
+      default: "",
     },
 
     image: {
       type: String,
       default: "",
+    },
+
+    // Tambahkan field ini agar info produk melekat di riwayat pesan
+    product: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Product",
+      default: null,
     },
 
     readBy: [
@@ -37,3 +45,4 @@ const messageSchema = new mongoose.Schema(
 );
 
 module.exports = mongoose.model("Message", messageSchema);
+
