@@ -5,9 +5,9 @@ exports.createConversation = async (req, res) => {
     const { receiverId, productId } = req.body;
     const senderId = req.user.id;
 
-    if (!receiverId || !productId) {
+    if (!receiverId) {
       return res.status(400).json({
-        message: "receiverId dan productId wajib diisi.",
+        message: "receiverId wajib diisi.",
       });
     }
 
@@ -17,18 +17,29 @@ exports.createConversation = async (req, res) => {
       });
     }
 
+    // 1. Cari percakapan berdasarkan anggota (pembeli & penjual) SAJA
     let conversation = await Conversation.findOne({
       members: { $all: [senderId, receiverId] },
-      product: productId,
-    }).populate("members", "name email").populate("product");
+    })
+      .populate("members", "name email")
+      .populate("product");
 
+    // 2. Jika percakapan sudah ada
     if (conversation) {
+      // (Opsional) Update produk ke produk terbaru yang ditanyakan jika ada productId
+      if (productId && String(conversation.product?._id) !== String(productId)) {
+        conversation.product = productId;
+        await conversation.save();
+        await conversation.populate("product");
+      }
+
       return res.status(200).json(conversation);
     }
 
+    // 3. Jika belum pernah ada percakapan sama sekali, buat baru
     conversation = await Conversation.create({
       members: [senderId, receiverId],
-      product: productId,
+      product: productId || null,
     });
 
     conversation = await Conversation.findById(conversation._id)
@@ -53,7 +64,7 @@ exports.getConversations = async (req, res) => {
     })
       .populate("members", "name email")
       .populate("product")
-      .sort({ lastMessageAt: -1 });
+      .sort({ lastMessageAt: -1, updatedAt: -1 });
 
     return res.status(200).json(conversations);
   } catch (err) {
@@ -65,3 +76,4 @@ exports.getConversations = async (req, res) => {
     });
   }
 };
+

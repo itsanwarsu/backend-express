@@ -10,11 +10,11 @@ const conversationSchema = new mongoose.Schema(
       },
     ],
 
-    // Produk yang sedang dibahas
+    // Produk yang sedang dibahas (opsional, tidak wajib)
     product: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Product",
-      required: true,
+      default: null,
     },
 
     lastMessage: {
@@ -38,3 +38,4 @@ const conversationSchema = new mongoose.Schema(
 );
 
 module.exports = mongoose.model("Conversation", conversationSchema);
+

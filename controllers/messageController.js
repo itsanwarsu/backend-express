@@ -21,7 +21,9 @@ exports.sendMessage = async (req, res) => {
 
     const data = await Message.findById(message._id)
       .populate("sender", "name");
-getIO().emit("newMessage", data);
+
+    // Kirim event socket real-time
+    getIO().emit("newMessage", data);
 
     res.status(201).json(data);
   } catch (err) {
@@ -47,3 +49,4 @@ exports.getMessages = async (req, res) => {
     });
   }
 };
+
