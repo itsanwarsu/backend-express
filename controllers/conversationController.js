@@ -1,5 +1,5 @@
 const Conversation = require("../models/Conversation");
-const Message = require("../models/Message"); // ⚠️ JANGAN LUPA BARIS INI!
+const Message = require("../models/Message");
 
 exports.createConversation = async (req, res) => {
   try {
@@ -21,18 +21,20 @@ exports.createConversation = async (req, res) => {
     // 1. Cari percakapan berdasarkan anggota (pembeli & penjual) SAJA
     let conversation = await Conversation.findOne({
       members: { $all: [senderId, receiverId] },
-    })
-      .populate("members", "name email")
-      .populate("product");
+    });
 
     // 2. Jika percakapan sudah ada
     if (conversation) {
-      // (Opsional) Update produk ke produk terbaru yang ditanyakan jika ada productId
-      if (productId && String(conversation.product?._id) !== String(productId)) {
+      // Selalu perbarui tautan produk jika ada productId baru yang dikirimkan
+      if (productId) {
         conversation.product = productId;
         await conversation.save();
-        await conversation.populate("product");
       }
+
+      // Populate ulang data anggota dan produk terbaru
+      conversation = await Conversation.findById(conversation._id)
+        .populate("members", "name email")
+        .populate("product");
 
       return res.status(200).json(conversation);
     }
@@ -77,7 +79,6 @@ exports.getConversations = async (req, res) => {
     });
   }
 };
-
 
 exports.deleteConversation = async (req, res) => {
   try {
