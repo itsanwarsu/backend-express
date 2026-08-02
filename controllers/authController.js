@@ -31,7 +31,6 @@ exports.register = async (req, res) => {
       });
     }
 
-
     const user = new User({
       name,
       email,
@@ -39,15 +38,11 @@ exports.register = async (req, res) => {
       role: "user",
     });
 
-
     await user.save();
-
 
     res.status(201).json({
       message: "Pendaftaran berhasil",
     });
-
-
   } catch (error) {
     res.status(500).json({
       message: error.message,
@@ -61,22 +56,16 @@ exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-
     const user = await User.findOne({ email });
 
-
-    if (!user) {
+    // User tidak ada, atau akun ini terdaftar via Google (tidak punya password)
+    if (!user || !user.password) {
       return res.status(400).json({
         message: "Email atau password salah",
       });
     }
 
-
-    const isMatch = await bcrypt.compare(
-      password,
-      user.password
-    );
-
+    const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
       return res.status(400).json({
@@ -84,9 +73,7 @@ exports.login = async (req, res) => {
       });
     }
 
-
     const token = generateToken(user);
-
 
     res.status(200).json({
       message: "Login berhasil",
@@ -98,80 +85,46 @@ exports.login = async (req, res) => {
         role: user.role,
       },
     });
-
-
   } catch (error) {
     res.status(500).json({
       message: error.message,
     });
   }
 };
-
 
 
 // ================= GOOGLE CALLBACK =================
 exports.googleCallback = async (req, res) => {
   try {
+    // req.user sudah berupa User document lengkap,
+    // di-resolve oleh verify callback di config/passport.js
+    // (find-or-create sudah dilakukan di sana, tidak perlu diulang di sini)
+    const user = req.user;
 
-    // Data user dari Passport Google
-    const {
-      id,
-      displayName,
-      emails
-    } = req.user;
-
-
-    const email = emails[0].value;
-
-
-    // Cari user berdasarkan googleId atau email
-    let user = await User.findOne({
-      email,
-    });
-
-
-    // Jika user belum ada, buat baru
     if (!user) {
-
-      user = await User.create({
-        name: displayName,
-        email,
-        googleId: id,
-        role: "user",
+      return res.status(401).json({
+        message: "Autentikasi Google gagal",
       });
-
     }
 
-
-    // Generate JWT
     const token = generateToken(user);
 
-
-    // Redirect ke frontend
+    // Redirect ke frontend dengan token
     res.redirect(
       `https://ecommerce-app-sage-alpha.vercel.app/google-success?token=${token}`
     );
-
-
   } catch (error) {
-
     res.status(500).json({
       message: error.message,
     });
-
   }
 };
-
 
 
 // ================= PROFILE =================
 exports.profile = async (req, res) => {
   try {
-
-    const user = await User
-      .findById(req.user.id)
-      .select("-password");
-
+    const user = await User.findById(req.user.id).select("-password");
 
     if (!user) {
       return res.status(404).json({
@@ -179,17 +132,12 @@ exports.profile = async (req, res) => {
       });
     }
 
-
     res.status(200).json({
       user,
     });
-
-
   } catch (error) {
-
     res.status(500).json({
       message: error.message,
     });
-
   }
 };
