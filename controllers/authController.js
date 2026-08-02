@@ -149,7 +149,7 @@ exports.googleCallback = async (req, res) => {
 
     // Redirect ke frontend
     res.redirect(
-      `http://localhost:5173/google-success?token=${token}`
+      `https://ecommerce-app-sage-alpha.vercel.app/google-success?token=${token}`
     );
 
 
