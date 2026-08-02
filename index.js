@@ -3,6 +3,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const hubungkanDB = require("./config/db");
+
 const authRoutes = require("./routes/auth");
 const productRoutes = require("./routes/product");
 const cartRoutes = require("./routes/cart");
@@ -10,26 +11,42 @@ const orderRoutes = require("./routes/order");
 const wishlistRoutes = require("./routes/wishlistRoutes");
 const conversationRoutes = require("./routes/conversationRoutes");
 const messageRoutes = require("./routes/messageRoutes");
+
 const http = require("http");
 const { Server } = require("socket.io");
 const { initializeSocket } = require("./socket/socket");
 
+const passport = require("passport");
+require("./config/passport");
+
+
 const app = express();
 const server = http.createServer(app);
+
 const PORT = process.env.PORT || 3000;
+
 
 // =======================
 // Database
 // =======================
 hubungkanDB();
 
+
 // =======================
 // Middleware
 // =======================
+
 app.use(
   cors({
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    origin: "https://ecommerce-app-sage-alpha.vercel.app",
+    methods: [
+      "GET",
+      "POST",
+      "PUT",
+      "DELETE",
+      "PATCH",
+      "OPTIONS",
+    ],
     allowedHeaders: [
       "Content-Type",
       "Authorization",
@@ -38,79 +55,196 @@ app.use(
   })
 );
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true })); // Parsing request body berupa form-urlencoded/form-data
 
+app.use(express.json());
+
+app.use(
+  express.urlencoded({
+    extended: true,
+  })
+);
+
+
+// =======================
+// Google OAuth Passport
+// =======================
+
+app.use(passport.initialize());
+
+
+// =======================
 // Bypass warning ngrok
+// =======================
+
 app.use((req, res, next) => {
-  res.setHeader("ngrok-skip-browser-warning", "true");
+
+  res.setHeader(
+    "ngrok-skip-browser-warning",
+    "true"
+  );
+
 
   if (req.method === "OPTIONS") {
     return res.sendStatus(200);
   }
 
+
   next();
+
 });
+
+
 
 // =======================
 // Routes
 // =======================
-app.use("/api/auth", authRoutes);
-app.use("/api/products", productRoutes);
-app.use("/api/cart", cartRoutes);
-app.use("/api/orders", orderRoutes);
-app.use("/api/wishlist", wishlistRoutes);
-app.use("/api/conversations", conversationRoutes);
-app.use("/api/messages", messageRoutes);
+
+app.use(
+  "/api/auth",
+  authRoutes
+);
+
+
+app.use(
+  "/api/products",
+  productRoutes
+);
+
+
+app.use(
+  "/api/cart",
+  cartRoutes
+);
+
+
+app.use(
+  "/api/orders",
+  orderRoutes
+);
+
+
+app.use(
+  "/api/wishlist",
+  wishlistRoutes
+);
+
+
+app.use(
+  "/api/conversations",
+  conversationRoutes
+);
+
+
+app.use(
+  "/api/messages",
+  messageRoutes
+);
+
+
 
 // =======================
 // Health Check
 // =======================
+
 app.get("/", (req, res) => {
+
   res.json({
-    message: "Backend Ecommerce API berjalan",
+    message:
+      "Backend Ecommerce API berjalan",
   });
+
 });
 
+
 app.get("/health", (req, res) => {
+
   res.json({
     status: "OK",
   });
+
 });
+
+
 
 // =======================
 // 404 Handler
 // =======================
+
 app.use((req, res) => {
+
   res.status(404).json({
-    message: "Endpoint tidak ditemukan",
+    message:
+      "Endpoint tidak ditemukan",
   });
+
 });
 
+
+
 // =======================
-// Global Error Handler (Pesan Error Lebih Detail)
+// Global Error Handler
 // =======================
+
 app.use((err, req, res, next) => {
-  console.error("Global Error Handler Caught:", err);
+
+  console.error(
+    "Global Error Handler:",
+    err
+  );
+
 
   res.status(err.status || 500).json({
-    message: err.message || "Terjadi kesalahan pada server",
+
+    message:
+      err.message ||
+      "Terjadi kesalahan pada server",
+
     error: err,
+
   });
+
 });
+
+
+
+// =======================
+// Socket.io
+// =======================
+
+const io = new Server(server, {
+
+  cors: {
+
+    origin: "*",
+
+    methods: [
+      "GET",
+      "POST",
+      "PUT",
+      "DELETE",
+    ],
+
+  },
+
+});
+
+
+initializeSocket(io);
+
+
 
 // =======================
 // Start Server
 // =======================
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE"],
-  },
-});
 
-initializeSocket(io);
+server.listen(
+  PORT,
+  "0.0.0.0",
+  () => {
 
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server berjalan di port ${PORT}`);
-});
+    console.log(
+      `Server berjalan di port ${PORT}`
+    );
+
+  }
+);

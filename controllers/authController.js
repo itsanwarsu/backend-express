@@ -2,12 +2,27 @@ const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
+
+// ================= CREATE JWT =================
+const generateToken = (user) => {
+  return jwt.sign(
+    {
+      id: user._id,
+      role: user.role,
+    },
+    process.env.JWT_SECRET,
+    {
+      expiresIn: "7d",
+    }
+  );
+};
+
+
 // ================= REGISTER =================
 exports.register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    // Cek email sudah terdaftar
     const existingUser = await User.findOne({ email });
 
     if (existingUser) {
@@ -16,7 +31,7 @@ exports.register = async (req, res) => {
       });
     }
 
-    // Buat user baru
+
     const user = new User({
       name,
       email,
@@ -24,12 +39,14 @@ exports.register = async (req, res) => {
       role: "user",
     });
 
-    // Password akan otomatis di-hash oleh middleware pre("save")
+
     await user.save();
+
 
     res.status(201).json({
       message: "Pendaftaran berhasil",
     });
+
 
   } catch (error) {
     res.status(500).json({
@@ -38,13 +55,15 @@ exports.register = async (req, res) => {
   }
 };
 
+
 // ================= LOGIN =================
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Cari user berdasarkan email
+
     const user = await User.findOne({ email });
+
 
     if (!user) {
       return res.status(400).json({
@@ -52,8 +71,12 @@ exports.login = async (req, res) => {
       });
     }
 
-    // Cek password
-    const isMatch = await bcrypt.compare(password, user.password);
+
+    const isMatch = await bcrypt.compare(
+      password,
+      user.password
+    );
+
 
     if (!isMatch) {
       return res.status(400).json({
@@ -61,19 +84,10 @@ exports.login = async (req, res) => {
       });
     }
 
-    // Buat JWT
-    const token = jwt.sign(
-      {
-        id: user._id,
-        role: user.role,
-      },
-      process.env.JWT_SECRET,
-      {
-        expiresIn: "7d",
-      }
-    );
 
-    // Kirim response
+    const token = generateToken(user);
+
+
     res.status(200).json({
       message: "Login berhasil",
       token,
@@ -85,6 +99,7 @@ exports.login = async (req, res) => {
       },
     });
 
+
   } catch (error) {
     res.status(500).json({
       message: error.message,
@@ -92,9 +107,71 @@ exports.login = async (req, res) => {
   }
 };
 
+
+
+// ================= GOOGLE CALLBACK =================
+exports.googleCallback = async (req, res) => {
+  try {
+
+    // Data user dari Passport Google
+    const {
+      id,
+      displayName,
+      emails
+    } = req.user;
+
+
+    const email = emails[0].value;
+
+
+    // Cari user berdasarkan googleId atau email
+    let user = await User.findOne({
+      email,
+    });
+
+
+    // Jika user belum ada, buat baru
+    if (!user) {
+
+      user = await User.create({
+        name: displayName,
+        email,
+        googleId: id,
+        role: "user",
+      });
+
+    }
+
+
+    // Generate JWT
+    const token = generateToken(user);
+
+
+    // Redirect ke frontend
+    res.redirect(
+      `http://localhost:5173/google-success?token=${token}`
+    );
+
+
+  } catch (error) {
+
+    res.status(500).json({
+      message: error.message,
+    });
+
+  }
+};
+
+
+
+// ================= PROFILE =================
 exports.profile = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select("-password");
+
+    const user = await User
+      .findById(req.user.id)
+      .select("-password");
+
 
     if (!user) {
       return res.status(404).json({
@@ -102,13 +179,17 @@ exports.profile = async (req, res) => {
       });
     }
 
+
     res.status(200).json({
       user,
     });
 
+
   } catch (error) {
+
     res.status(500).json({
       message: error.message,
     });
+
   }
 };

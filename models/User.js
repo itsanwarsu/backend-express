@@ -16,8 +16,17 @@ const UserSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      required: true,
     },
+googleId: {
+  type: String,
+  unique: true,
+  sparse: true,
+},
+provider: {
+  type: String,
+  enum: ["local", "google"],
+  default: "local",
+},
     role: {
       type: String,
       enum: ["user", "admin", "superadmin"],
@@ -37,12 +46,15 @@ const UserSchema = new mongoose.Schema(
 
 // Hash password sebelum disimpan
 UserSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) return;
+  if (!this.password) return next();
+
+  if (!this.isModified("password")) return next();
 
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
-});
 
+  next();
+});
 // Method tambahan untuk membandingkan password saat login
 UserSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
