@@ -38,7 +38,7 @@ hubungkanDB();
 
 app.use(
   cors({
-    origin: "https://ecommerce-app-sage-alpha.vercel.app",
+    origin: "*",
     methods: [
       "GET",
       "POST",
