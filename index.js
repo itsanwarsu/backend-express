@@ -29,8 +29,23 @@ const PORT = process.env.PORT || 3000;
 // =======================
 // Database
 // =======================
-hubungkanDB();
-
+// HUBUNGANI DB DENGAN AWAIT
+(async () => {
+  try {
+    await hubungkanDB();
+    console.log('✅ Database connected, starting server...');
+    
+    // =======================
+    // Start Server (pindahkan ke sini)
+    // =======================
+    server.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server berjalan di port ${PORT}`);
+    });
+  } catch (err) {
+    console.error('❌ Failed to start server:', err);
+    process.exit(1);
+  }
+})();
 
 // =======================
 // Middleware
@@ -233,18 +248,12 @@ initializeSocket(io);
 
 
 
-// =======================
-// Start Server
-// =======================
+// Tangkap error tak terduga agar aplikasi tidak langsung crash tanpa log
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
 
-server.listen(
-  PORT,
-  "0.0.0.0",
-  () => {
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception thrown:', err);
+});
 
-    console.log(
-      `Server berjalan di port ${PORT}`
-    );
-
-  }
-);
