@@ -45,15 +45,15 @@ provider: {
 );
 
 // Hash password sebelum disimpan
-UserSchema.pre("save", async function (next) {
-  if (!this.password) return next();
+UserSchema.pre("save", async function () {
+  // Login Google tidak memiliki password
+  if (!this.password) return;
 
-  if (!this.isModified("password")) return next();
+  // Hash hanya jika password berubah
+  if (!this.isModified("password")) return;
 
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
-
-  next();
 });
 // Method tambahan untuk membandingkan password saat login
 UserSchema.methods.comparePassword = async function (candidatePassword) {
