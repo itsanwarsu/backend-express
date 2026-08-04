@@ -47,6 +47,7 @@ const PORT = process.env.PORT || 3000;
   }
 })();
 
+
 // =======================
 // Middleware
 // =======================
@@ -255,5 +256,13 @@ process.on('unhandledRejection', (reason, promise) => {
 
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception thrown:', err);
+});
+
+process.on('SIGTERM', () => {
+  console.log('Menerima sinyal SIGTERM, menutup server...');
+  server.close(() => {
+    console.log('Server berhasil ditutup secara aman.');
+    process.exit(0);
+  });
 });
 
