@@ -44,7 +44,13 @@ const initializeSocket = (socketIO) => {
 
 const getIO = () => io;
 
+// Ambil socket.id milik user tertentu jika sedang online.
+// Dipakai untuk emit terarah (bukan broadcast ke semua client).
+const getOnlineSocketId = (userId) => onlineUsers.get(userId);
+
 module.exports = {
   initializeSocket,
   getIO,
+  getOnlineSocketId,
 };
+
