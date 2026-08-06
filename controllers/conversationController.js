@@ -51,13 +51,47 @@ exports.createConversation = async (req, res) => {
 
 exports.getConversations = async (req, res) => {
   try {
+    const userId = req.user.id;
+
     const conversations = await Conversation.find({
-      members: req.user.id,
+      members: userId,
     })
       .populate("members", "name email")
       .sort({ lastMessageAt: -1, updatedAt: -1 });
 
-    return res.status(200).json(conversations);
+    // Hitung unread count per percakapan dalam satu query (lebih efisien
+    // daripada query terpisah untuk tiap percakapan)
+    const conversationIds = conversations.map((c) => c._id);
+
+    const unreadCounts = await Message.aggregate([
+      {
+        $match: {
+          conversation: { $in: conversationIds },
+          sender: { $ne: userId },
+          readBy: { $ne: userId },
+        },
+      },
+      {
+        $group: {
+          _id: "$conversation",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    // Ubah hasil aggregate jadi map { conversationId: count }
+    const unreadMap = {};
+    unreadCounts.forEach((item) => {
+      unreadMap[item._id.toString()] = item.count;
+    });
+
+    // Sisipkan unreadCount ke tiap percakapan
+    const result = conversations.map((c) => ({
+      ...c.toObject(),
+      unreadCount: unreadMap[c._id.toString()] || 0,
+    }));
+
+    return res.status(200).json(result);
   } catch (err) {
     console.error("Get Conversations Error:", err);
 
