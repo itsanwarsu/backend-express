@@ -3,7 +3,7 @@ const Message = require("../models/Message");
 
 exports.createConversation = async (req, res) => {
   try {
-    const { receiverId } = req.body;
+    const { receiverId, productId } = req.body;
     const senderId = req.user.id;
 
     if (!receiverId) {
@@ -23,25 +23,32 @@ exports.createConversation = async (req, res) => {
       members: { $all: [senderId, receiverId] },
     }).populate("members", "name email");
 
-    // 2. Jika percakapan sudah ada, langsung kembalikan data percakapan tersebut
+    // 2. Jika percakapan sudah ada, update konteks produk yang sedang dibahas
+    //    (kalau ada productId baru dikirim), lalu kembalikan datanya
     if (conversation) {
+      if (productId && String(conversation.product) !== String(productId)) {
+        conversation.product = productId;
+        await conversation.save();
+        conversation = await Conversation.findById(conversation._id)
+          .populate("members", "name email")
+          .populate("product");
+      }
       return res.status(200).json(conversation);
     }
 
     // 3. Jika belum pernah ada, buat dokumen percakapan baru
     conversation = await Conversation.create({
       members: [senderId, receiverId],
+      product: productId || undefined,
     });
 
-    conversation = await Conversation.findById(conversation._id).populate(
-      "members",
-      "name email"
-    );
+    conversation = await Conversation.findById(conversation._id)
+      .populate("members", "name email")
+      .populate("product");
 
     return res.status(201).json(conversation);
   } catch (err) {
     console.error("Create Conversation Error:", err);
-
     return res.status(500).json({
       message: "Gagal membuat percakapan.",
       error: err.message,
