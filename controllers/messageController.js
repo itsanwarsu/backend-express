@@ -31,13 +31,18 @@ exports.sendMessage = async (req, res) => {
 
     // Kirim event socket hanya ke member percakapan ini,
     // bukan broadcast ke semua user yang sedang online.
-    if (conversation) {
-      conversation.members.forEach((memberId) => {
-        const socketId = getOnlineSocketId(String(memberId));
-        if (socketId) {
-          getIO().to(socketId).emit("newMessage", data);
-        }
-      });
+   if (conversation) {
+  const senderId = String(req.user.id);
+
+  conversation.members.forEach((memberId) => {
+    const idStr = String(memberId);
+    if (idStr === senderId) return; // skip diri sendiri, sender sudah punya pesan dari response API
+
+    const socketId = getOnlineSocketId(idStr);
+    if (socketId) {
+      getIO().to(socketId).emit("newMessage", data);
+    }
+  });
     }
 
     res.status(201).json(data);
