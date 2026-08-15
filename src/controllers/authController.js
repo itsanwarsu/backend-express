@@ -1,13 +1,12 @@
-const User = require("../models/User");
+const prisma = require("../../config/prisma");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-
 
 // ================= CREATE JWT =================
 const generateToken = (user) => {
   return jwt.sign(
     {
-      id: user._id,
+      id: user.id,
       role: user.role,
     },
     process.env.JWT_SECRET,
@@ -17,13 +16,17 @@ const generateToken = (user) => {
   );
 };
 
-
 // ================= REGISTER =================
 exports.register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    const existingUser = await User.findOne({ email });
+    // Cek apakah email sudah digunakan
+    const existingUser = await prisma.user.findUnique({
+      where: {
+        email,
+      },
+    });
 
     if (existingUser) {
       return res.status(400).json({
@@ -31,40 +34,52 @@ exports.register = async (req, res) => {
       });
     }
 
-    const user = new User({
-      name,
-      email,
-      password,
-      role: "user",
-    });
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    await user.save();
+    // Buat user di PostgreSQL
+    await prisma.user.create({
+      data: {
+        name,
+        email,
+        password: hashedPassword,
+        provider: "local",
+        role: "user",
+      },
+    });
 
     res.status(201).json({
       message: "Pendaftaran berhasil",
     });
   } catch (error) {
+    console.error("Register error:", error);
+
     res.status(500).json({
       message: error.message,
     });
   }
 };
 
-
 // ================= LOGIN =================
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const user = await User.findOne({ email });
+    // Cari user di PostgreSQL
+    const user = await prisma.user.findUnique({
+      where: {
+        email,
+      },
+    });
 
-    // User tidak ada, atau akun ini terdaftar via Google (tidak punya password)
+    // User tidak ada atau akun Google tidak memiliki password
     if (!user || !user.password) {
       return res.status(400).json({
         message: "Email atau password salah",
       });
     }
 
+    // Bandingkan password
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
@@ -79,26 +94,24 @@ exports.login = async (req, res) => {
       message: "Login berhasil",
       token,
       user: {
-        _id: user._id,
+        id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
       },
     });
   } catch (error) {
+    console.error("Login error:", error);
+
     res.status(500).json({
       message: error.message,
     });
   }
 };
 
-
 // ================= GOOGLE CALLBACK =================
 exports.googleCallback = async (req, res) => {
   try {
-    // req.user sudah berupa User document lengkap,
-    // di-resolve oleh verify callback di config/passport.js
-    // (find-or-create sudah dilakukan di sana, tidak perlu diulang di sini)
     const user = req.user;
 
     if (!user) {
@@ -109,22 +122,36 @@ exports.googleCallback = async (req, res) => {
 
     const token = generateToken(user);
 
-    // Redirect ke frontend dengan token
     res.redirect(
       `https://ecommerce-app-sage-alpha.vercel.app/google-success?token=${token}`
     );
   } catch (error) {
+    console.error("Google callback error:", error);
+
     res.status(500).json({
       message: error.message,
     });
   }
 };
 
-
 // ================= PROFILE =================
 exports.profile = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select("-password");
+    const user = await prisma.user.findUnique({
+      where: {
+        id: req.user.id,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        googleId: true,
+        provider: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
 
     if (!user) {
       return res.status(404).json({
@@ -136,6 +163,8 @@ exports.profile = async (req, res) => {
       user,
     });
   } catch (error) {
+    console.error("Profile error:", error);
+
     res.status(500).json({
       message: error.message,
     });

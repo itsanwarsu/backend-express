@@ -1,6 +1,6 @@
 const Message = require("../models/Message");
 const Conversation = require("../models/Conversation");
-const { getIO, getOnlineSocketId } = require("../socket/socket");
+const { getIO, getOnlineSocketId } = require("../../socket/socket");
 
 // Kirim pesan
 exports.sendMessage = async (req, res) => {

@@ -1,25 +1,29 @@
+//Kredensial
 require("dotenv").config();
 
+//expressjs
 const express = require("express");
 const cors = require("cors");
 const hubungkanDB = require("./config/db");
 
-const authRoutes = require("./routes/auth");
-const productRoutes = require("./routes/product");
-const cartRoutes = require("./routes/cart");
-const orderRoutes = require("./routes/order");
-const wishlistRoutes = require("./routes/wishlistRoutes");
-const conversationRoutes = require("./routes/conversationRoutes");
-const messageRoutes = require("./routes/messageRoutes");
+//routes
+const authRoutes = require("./src/routes/auth");
+const productRoutes = require("./src/routes/product");
+const cartRoutes = require("./src/routes/cart");
+const orderRoutes = require("./src/routes/order");
+const wishlistRoutes = require("./src/routes/wishlistRoutes");
+const conversationRoutes = require("./src/routes/conversationRoutes");
+const messageRoutes = require("./src/routes/messageRoutes");
 
 const http = require("http");
 const { Server } = require("socket.io");
 const { initializeSocket } = require("./socket/socket");
 
+//Google Oauth
 const passport = require("passport");
 require("./config/passport");
 
-
+//inisialisasi
 const app = express();
 const server = http.createServer(app);
 
@@ -29,15 +33,15 @@ const PORT = process.env.PORT || 3000;
 // =======================
 // Database
 // =======================
-// HUBUNGANI DB DENGAN AWAIT
+
 (async () => {
-  try {
-    await hubungkanDB();
+  try {await hubungkanDB();
     console.log('✅ Database connected, starting server...');
     
-    // =======================
-    // Start Server (pindahkan ke sini)
-    // =======================
+// =======================
+// Start Server (pindahkan ke sini)
+// =======================
+
     server.listen(PORT, "0.0.0.0", () => {
       console.log(`Server berjalan di port ${PORT}`);
     });
@@ -47,39 +51,18 @@ const PORT = process.env.PORT || 3000;
   }
 })();
 
-
 // =======================
 // Middleware
 // =======================
 
-app.use(
-  cors({
+app.use(cors({
     origin: "*",
-    methods: [
-      "GET",
-      "POST",
-      "PUT",
-      "DELETE",
-      "PATCH",
-      "OPTIONS",
-    ],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "ngrok-skip-browser-warning",
-    ],
-  })
-);
-
+    methods: ["GET","POST","PUT","DELETE","PATCH","OPTIONS",],
+    allowedHeaders: ["Content-Type","Authorization","ngrok-skip-browser-warning",],
+  }));
 
 app.use(express.json());
-
-app.use(
-  express.urlencoded({
-    extended: true,
-  })
-);
-
+app.use(express.urlencoded({extended: true,}));
 
 // =======================
 // Google OAuth Passport
@@ -87,167 +70,70 @@ app.use(
 
 app.use(passport.initialize());
 
-
 // =======================
 // Bypass warning ngrok
 // =======================
 
 app.use((req, res, next) => {
-
-  res.setHeader(
-    "ngrok-skip-browser-warning",
-    "true"
-  );
-
-
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
-  }
-
-
-  next();
-
+res.setHeader("ngrok-skip-browser-warning","true");
+if (req.method === "OPTIONS") {return res.sendStatus(200);}
+next();
 });
-
-
 
 // =======================
 // Routes
 // =======================
 
-app.use(
-  "/api/auth",
-  authRoutes
-);
-
-
-app.use(
-  "/api/products",
-  productRoutes
-);
-
-
-app.use(
-  "/api/cart",
-  cartRoutes
-);
-
-
-app.use(
-  "/api/orders",
-  orderRoutes
-);
-
-
-app.use(
-  "/api/wishlist",
-  wishlistRoutes
-);
-
-
-app.use(
-  "/api/conversations",
-  conversationRoutes
-);
-
-
-app.use(
-  "/api/messages",
-  messageRoutes
-);
-
-
+app.use("/api/auth",authRoutes);
+app.use("/api/products",productRoutes);
+app.use("/api/cart",cartRoutes);
+app.use("/api/orders",orderRoutes);
+app.use("/api/wishlist",wishlistRoutes);
+app.use("/api/conversations",conversationRoutes);
+app.use("/api/messages",messageRoutes);
 
 // =======================
 // Health Check
 // =======================
 
 app.get("/", (req, res) => {
-
-  res.json({
-    message:
-      "Backend Ecommerce API berjalan",
-  });
-
+res.json({ message:"Backend Ecommerce API berjalan", });
 });
-
 
 app.get("/health", (req, res) => {
-
-  res.json({
-    status: "OK",
-  });
-
+res.json({status: "OK",});
 });
-
-
 
 // =======================
 // 404 Handler
 // =======================
 
 app.use((req, res) => {
-
-  res.status(404).json({
-    message:
-      "Endpoint tidak ditemukan",
-  });
-
+res.status(404).json({message:"Endpoint tidak ditemukan",});
 });
-
-
 
 // =======================
 // Global Error Handler
 // =======================
 
 app.use((err, req, res, next) => {
+console.error("Global Error Handler:",err);
 
-  console.error(
-    "Global Error Handler:",
-    err
-  );
-
-
-  res.status(err.status || 500).json({
-
-    message:
-      err.message ||
-      "Terjadi kesalahan pada server",
-
-    error: err,
-
-  });
-
+res.status(err.status || 500).json({
+message:err.message ||"Terjadi kesalahan pada server",error: err,});
 });
-
-
 
 // =======================
 // Socket.io
 // =======================
 
 const io = new Server(server, {
-
-  cors: {
-
-    origin: "*",
-
-    methods: [
-      "GET",
-      "POST",
-      "PUT",
-      "DELETE",
-    ],
-
-  },
-
+cors: {
+origin: "*",
+methods: ["GET","POST","PUT","DELETE",],},
 });
 
-
 initializeSocket(io);
-
-
 
 // Tangkap error tak terduga agar aplikasi tidak langsung crash tanpa log
 process.on('unhandledRejection', (reason, promise) => {
