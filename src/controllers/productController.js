@@ -1,4 +1,4 @@
-const Product = require("../models/Product");
+const prisma = require("../../config/prisma");
 const cloudinary = require("../../config/cloudinary");
 const streamifier = require("streamifier");
 
@@ -34,35 +34,64 @@ exports.createProduct = async (req, res) => {
       });
     }
 
-    let image = {
-      url: "",
-      public_id: "",
-    };
+    let imageUrl = "";
+    let imagePublicId = "";
 
     if (req.file && req.file.buffer) {
       const result = await uploadToCloudinary(req.file.buffer);
 
-      image = {
-        url: result.secure_url,
-        public_id: result.public_id,
-      };
+      imageUrl = result.secure_url;
+      imagePublicId = result.public_id;
     }
 
-    const product = await Product.create({
-      name,
-      description,
-      price: Number(price) || 0,
-      stock: Number(stock) || 0,
-      category,
-      image,
-      seller: req.user._id || req.user.id,
+    const sellerId = Number(req.user.id);
+
+    if (!sellerId) {
+      return res.status(401).json({
+        message: "User tidak valid",
+      });
+    }
+
+    // Pastikan seller memang ada
+    const seller = await prisma.user.findUnique({
+      where: {
+        id: sellerId,
+      },
+    });
+
+    if (!seller) {
+      return res.status(404).json({
+        message: "Seller tidak ditemukan",
+      });
+    }
+
+    const product = await prisma.product.create({
+      data: {
+        name,
+        description: description || "",
+        price: Number(price),
+        stock: Number(stock) || 0,
+        category,
+        imageUrl,
+        imagePublicId,
+        isActive: true,
+        sellerId,
+      },
+      include: {
+        seller: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
     });
 
     return res.status(201).json({
       message: "Produk berhasil ditambahkan",
       product,
     });
-
   } catch (err) {
     console.error("Upload/Create Error:", err);
 
@@ -72,6 +101,7 @@ exports.createProduct = async (req, res) => {
     });
   }
 };
+
 // =======================
 // GET ALL PRODUCTS
 // =======================
@@ -79,22 +109,40 @@ exports.getProducts = async (req, res) => {
   try {
     const keyword = req.query.search || "";
 
-    const products = await Product.find({
-      name: {
-        $regex: keyword,
-        $options: "i",
+    const products = await prisma.product.findMany({
+      where: {
+        isActive: true,
+
+        ...(keyword
+          ? {
+              name: {
+                contains: keyword,
+                mode: "insensitive",
+              },
+            }
+          : {}),
       },
-      isActive: true,
-    }).sort({
-      createdAt: -1,
+
+      orderBy: {
+        createdAt: "desc",
+      },
+
+      include: {
+        seller: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
     });
 
-    res.json(products);
-
+    return res.json(products);
   } catch (err) {
     console.error("Get Products Error:", err);
 
-    res.status(500).json({
+    return res.status(500).json({
       message: err.message,
     });
   }
@@ -105,10 +153,29 @@ exports.getProducts = async (req, res) => {
 // =======================
 exports.getProduct = async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id).populate(
-      "seller",
-      "_id name email"
-    );
+    const productId = Number(req.params.id);
+
+    if (!Number.isInteger(productId)) {
+      return res.status(400).json({
+        message: "Format ID produk tidak valid",
+      });
+    }
+
+    const product = await prisma.product.findUnique({
+      where: {
+        id: productId,
+      },
+
+      include: {
+        seller: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
 
     if (!product) {
       return res.status(404).json({
@@ -116,26 +183,34 @@ exports.getProduct = async (req, res) => {
       });
     }
 
-    res.json(product);
-
+    return res.json(product);
   } catch (err) {
-    if (err.name === "CastError") {
-      return res.status(400).json({
-        message: "Format ID produk tidak valid",
-      });
-    }
+    console.error("Get Product Error:", err);
 
-    res.status(500).json({
+    return res.status(500).json({
       message: err.message,
     });
   }
 };
+
 // =======================
 // UPDATE PRODUCT
 // =======================
 exports.updateProduct = async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id);
+    const productId = Number(req.params.id);
+
+    if (!Number.isInteger(productId)) {
+      return res.status(400).json({
+        message: "Format ID produk tidak valid",
+      });
+    }
+
+    const product = await prisma.product.findUnique({
+      where: {
+        id: productId,
+      },
+    });
 
     if (!product) {
       return res.status(404).json({
@@ -143,52 +218,77 @@ exports.updateProduct = async (req, res) => {
       });
     }
 
-    let image = product.image;
+    let imageUrl = product.imageUrl;
+    let imagePublicId = product.imagePublicId;
 
+    // Jika upload gambar baru
     if (req.file && req.file.buffer) {
-      // Hapus gambar lama di Cloudinary jika ada
-      if (product.image?.public_id) {
-        await cloudinary.uploader.destroy(product.image.public_id);
+      // Hapus gambar lama
+      if (product.imagePublicId) {
+        await cloudinary.uploader.destroy(product.imagePublicId);
       }
 
       // Upload gambar baru
       const result = await uploadToCloudinary(req.file.buffer);
 
-      image = {
-        url: result.secure_url,
-        public_id: result.public_id,
-      };
+      imageUrl = result.secure_url;
+      imagePublicId = result.public_id;
     }
 
-    product.name = req.body.name ?? product.name;
-    product.description = req.body.description ?? product.description;
+    const data = {
+      imageUrl,
+      imagePublicId,
+    };
+
+    if (req.body.name !== undefined) {
+      data.name = req.body.name;
+    }
+
+    if (req.body.description !== undefined) {
+      data.description = req.body.description;
+    }
 
     if (req.body.price !== undefined && req.body.price !== "") {
-      product.price = Number(req.body.price);
+      data.price = Number(req.body.price);
     }
 
     if (req.body.stock !== undefined && req.body.stock !== "") {
-      product.stock = Number(req.body.stock);
+      data.stock = Number(req.body.stock);
     }
 
-    product.category = req.body.category ?? product.category;
-    product.image = image;
+    if (req.body.category !== undefined) {
+      data.category = req.body.category;
+    }
 
-    await product.save();
+    if (req.body.isActive !== undefined) {
+      data.isActive =
+        req.body.isActive === true || req.body.isActive === "true";
+    }
+
+    const updatedProduct = await prisma.product.update({
+      where: {
+        id: productId,
+      },
+
+      data,
+
+      include: {
+        seller: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
 
     return res.json({
       message: "Produk berhasil diperbarui",
-      product,
+      product: updatedProduct,
     });
-
   } catch (err) {
     console.error("Update Product Error:", err);
-
-    if (err.name === "CastError") {
-      return res.status(400).json({
-        message: "Format ID produk tidak valid",
-      });
-    }
 
     return res.status(500).json({
       message: "Terjadi kesalahan pada server",
@@ -202,7 +302,19 @@ exports.updateProduct = async (req, res) => {
 // =======================
 exports.deleteProduct = async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id);
+    const productId = Number(req.params.id);
+
+    if (!Number.isInteger(productId)) {
+      return res.status(400).json({
+        message: "Format ID produk tidak valid",
+      });
+    }
+
+    const product = await prisma.product.findUnique({
+      where: {
+        id: productId,
+      },
+    });
 
     if (!product) {
       return res.status(404).json({
@@ -210,24 +322,22 @@ exports.deleteProduct = async (req, res) => {
       });
     }
 
-    if (product.image?.public_id) {
-      await cloudinary.uploader.destroy(product.image.public_id);
+    // Hapus gambar dari Cloudinary
+    if (product.imagePublicId) {
+      await cloudinary.uploader.destroy(product.imagePublicId);
     }
 
-    await product.deleteOne();
+    await prisma.product.delete({
+      where: {
+        id: productId,
+      },
+    });
 
     return res.json({
       message: "Produk berhasil dihapus",
     });
-
   } catch (err) {
     console.error("Delete Product Error:", err);
-
-    if (err.name === "CastError") {
-      return res.status(400).json({
-        message: "Format ID produk tidak valid",
-      });
-    }
 
     return res.status(500).json({
       message: "Terjadi kesalahan pada server",
@@ -235,4 +345,3 @@ exports.deleteProduct = async (req, res) => {
     });
   }
 };
-

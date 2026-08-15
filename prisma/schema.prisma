@@ -18,14 +18,38 @@ enum Role {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  name      String
-  email     String   @unique
-  password  String?
-  googleId  String?  @unique
-  provider  Provider @default(local)
-  role      Role     @default(user)
+  id       Int      @id @default(autoincrement())
+  name     String
+  email    String   @unique
+  password String?
+  googleId String?  @unique
+  provider Provider @default(local)
+  role     Role     @default(user)
+
+  products Product[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Product {
+  id            Int     @id @default(autoincrement())
+  name          String
+  description   String  @default("")
+  price         Decimal @db.Decimal(12, 2)
+  stock         Int     @default(0)
+  category      String
+  imageUrl      String  @default("")
+  imagePublicId String  @default("")
+  isActive      Boolean @default(true)
+
+  sellerId Int
+  seller   User @relation(fields: [sellerId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sellerId])
+  @@index([category])
+  @@index([isActive])
 }
