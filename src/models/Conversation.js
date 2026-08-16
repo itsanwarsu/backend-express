@@ -4,16 +4,13 @@ const conversationSchema = new mongoose.Schema(
   {
     members: [
       {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
+        type: Number,
         required: true,
       },
     ],
 
-    // Produk yang sedang dibahas (opsional, tidak wajib)
     product: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Product",
+      type: Number,
       default: null,
     },
 
@@ -23,8 +20,8 @@ const conversationSchema = new mongoose.Schema(
     },
 
     lastSender: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      type: Number,
+      default: null,
     },
 
     lastMessageAt: {
@@ -38,4 +35,3 @@ const conversationSchema = new mongoose.Schema(
 );
 
 module.exports = mongoose.model("Conversation", conversationSchema);
-

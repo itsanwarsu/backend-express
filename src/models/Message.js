@@ -9,8 +9,7 @@ const messageSchema = new mongoose.Schema(
     },
 
     sender: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      type: Number,
       required: true,
     },
 
@@ -25,17 +24,14 @@ const messageSchema = new mongoose.Schema(
       default: "",
     },
 
-    // Tambahkan field ini agar info produk melekat di riwayat pesan
     product: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Product",
+      type: Number,
       default: null,
     },
 
     readBy: [
       {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
+        type: Number,
       },
     ],
   },
@@ -45,4 +41,3 @@ const messageSchema = new mongoose.Schema(
 );
 
 module.exports = mongoose.model("Message", messageSchema);
-
