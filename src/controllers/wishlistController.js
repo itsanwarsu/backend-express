@@ -1,12 +1,27 @@
-const User = require("../models/User");
-const Product = require("../models/Product");
+const prisma = require("../../config/prisma");
 
 // =====================================
 // GET WISHLIST
 // =====================================
 const getWishlist = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).populate("wishlist");
+    const userId = Number(req.user.id);
+
+    if (!Number.isInteger(userId)) {
+      return res.status(401).json({
+        success: false,
+        message: "User tidak valid",
+      });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+      include: {
+        wishlistProducts: true,
+      },
+    });
 
     if (!user) {
       return res.status(404).json({
@@ -15,13 +30,15 @@ const getWishlist = async (req, res) => {
       });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      total: user.wishlist.length,
-      wishlist: user.wishlist,
+      total: user.wishlistProducts.length,
+      wishlist: user.wishlistProducts,
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("Get Wishlist Error:", error);
+
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
@@ -33,10 +50,29 @@ const getWishlist = async (req, res) => {
 // =====================================
 const addWishlist = async (req, res) => {
   try {
-    const { productId } = req.params;
+    const userId = Number(req.user.id);
+    const productId = Number(req.params.productId);
 
-    // Cek apakah produk ada
-    const product = await Product.findById(productId);
+    if (!Number.isInteger(userId)) {
+      return res.status(401).json({
+        success: false,
+        message: "User tidak valid",
+      });
+    }
+
+    if (!Number.isInteger(productId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Product ID tidak valid",
+      });
+    }
+
+    // Cek produk
+    const product = await prisma.product.findUnique({
+      where: {
+        id: productId,
+      },
+    });
 
     if (!product) {
       return res.status(404).json({
@@ -45,14 +81,12 @@ const addWishlist = async (req, res) => {
       });
     }
 
-    // Tambahkan ke wishlist jika belum ada
-    const user = await User.findByIdAndUpdate(
-      req.user.id,
-      {
-        $addToSet: { wishlist: productId },
+    // Cek user
+    const user = await prisma.user.findUnique({
+      where: {
+        id: userId,
       },
-      { new: true }
-    ).populate("wishlist");
+    });
 
     if (!user) {
       return res.status(404).json({
@@ -61,13 +95,39 @@ const addWishlist = async (req, res) => {
       });
     }
 
-    res.status(200).json({
+    // Tambahkan product ke wishlist
+    await prisma.user.update({
+      where: {
+        id: userId,
+      },
+      data: {
+        wishlistProducts: {
+          connect: {
+            id: productId,
+          },
+        },
+      },
+    });
+
+    // Ambil wishlist terbaru
+    const updatedUser = await prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+      include: {
+        wishlistProducts: true,
+      },
+    });
+
+    return res.status(200).json({
       success: true,
       message: "Produk berhasil ditambahkan ke wishlist",
-      wishlist: user.wishlist,
+      wishlist: updatedUser.wishlistProducts,
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("Add Wishlist Error:", error);
+
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
@@ -79,15 +139,28 @@ const addWishlist = async (req, res) => {
 // =====================================
 const removeWishlist = async (req, res) => {
   try {
-    const { productId } = req.params;
+    const userId = Number(req.user.id);
+    const productId = Number(req.params.productId);
 
-    const user = await User.findByIdAndUpdate(
-      req.user.id,
-      {
-        $pull: { wishlist: productId },
+    if (!Number.isInteger(userId)) {
+      return res.status(401).json({
+        success: false,
+        message: "User tidak valid",
+      });
+    }
+
+    if (!Number.isInteger(productId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Product ID tidak valid",
+      });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: {
+        id: userId,
       },
-      { new: true }
-    ).populate("wishlist");
+    });
 
     if (!user) {
       return res.status(404).json({
@@ -96,13 +169,39 @@ const removeWishlist = async (req, res) => {
       });
     }
 
-    res.status(200).json({
+    // Hapus product dari wishlist
+    await prisma.user.update({
+      where: {
+        id: userId,
+      },
+      data: {
+        wishlistProducts: {
+          disconnect: {
+            id: productId,
+          },
+        },
+      },
+    });
+
+    // Ambil wishlist terbaru
+    const updatedUser = await prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+      include: {
+        wishlistProducts: true,
+      },
+    });
+
+    return res.status(200).json({
       success: true,
       message: "Produk berhasil dihapus dari wishlist",
-      wishlist: user.wishlist,
+      wishlist: updatedUser.wishlistProducts,
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("Remove Wishlist Error:", error);
+
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
@@ -114,4 +213,3 @@ module.exports = {
   addWishlist,
   removeWishlist,
 };
-
