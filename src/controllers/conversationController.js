@@ -1,303 +1,108 @@
 const Conversation = require("../models/Conversation");
 const Message = require("../models/Message");
-const prisma = require("../../config/prisma");
-const mongoose = require("mongoose");
 
-// ======================================================
-// HELPER: PARSE USER ID
-// ======================================================
-const parseUserId = (id) => {
-  const parsed = Number(id);
-
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
-};
-
-// ======================================================
-// HELPER: PARSE PRODUCT ID
-// ======================================================
-const parseProductId = (id) => {
-  if (id === undefined || id === null || id === "") {
-    return null;
-  }
-
-  const parsed = Number(id);
-
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
-};
-
-// ======================================================
-// HELPER: ENRICH CONVERSATIONS
-//
-// MongoDB menyimpan:
-// members: [userId]
-// product: productId
-//
-// PostgreSQL menyimpan detail User/Product.
-// Jadi kita ambil detailnya melalui Prisma.
-// ======================================================
-const enrichConversations = async (conversations) => {
-  if (!conversations || conversations.length === 0) {
-    return [];
-  }
-
-  // ------------------------------------------
-  // Ambil semua user ID dari conversations
-  // ------------------------------------------
-  const userIds = [
-    ...new Set(
-      conversations.flatMap((conversation) =>
-        Array.isArray(conversation.members)
-          ? conversation.members.map(Number)
-          : []
-      )
-    ),
-  ].filter((id) => Number.isInteger(id) && id > 0);
-
-  // ------------------------------------------
-  // Ambil semua product ID
-  // ------------------------------------------
-  const productIds = [
-    ...new Set(
-      conversations
-        .map((conversation) => conversation.product)
-        .filter(
-          (id) =>
-            id !== null &&
-            id !== undefined &&
-            Number.isInteger(Number(id))
-        )
-        .map(Number)
-    ),
-  ];
-
-  // ------------------------------------------
-  // Query PostgreSQL
-  // ------------------------------------------
-  const [users, products] = await Promise.all([
-    userIds.length > 0
-      ? prisma.user.findMany({
-          where: {
-            id: {
-              in: userIds,
-            },
-          },
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        })
-      : [],
-
-    productIds.length > 0
-      ? prisma.product.findMany({
-          where: {
-            id: {
-              in: productIds,
-            },
-          },
-          select: {
-            id: true,
-            name: true,
-            description: true,
-            price: true,
-            stock: true,
-            category: true,
-            imageUrl: true,
-            isActive: true,
-            sellerId: true,
-          },
-        })
-      : [],
-  ]);
-
-  // ------------------------------------------
-  // Buat map agar lookup cepat
-  // ------------------------------------------
-  const userMap = new Map(
-    users.map((user) => [user.id, user])
-  );
-
-  const productMap = new Map(
-    products.map((product) => [product.id, product])
-  );
-
-  // ------------------------------------------
-  // Gabungkan data MongoDB + PostgreSQL
-  // ------------------------------------------
-  return conversations.map((conversation) => {
-    const data = conversation.toObject();
-
-    const members = Array.isArray(data.members)
-      ? data.members
-          .map((userId) => userMap.get(Number(userId)))
-          .filter(Boolean)
-      : [];
-
-    const product =
-      data.product !== null && data.product !== undefined
-        ? productMap.get(Number(data.product)) || null
-        : null;
-
-    return {
-      ...data,
-
-      members,
-
-      product,
-
-      // Supaya frontend tetap mudah menggunakan ID
-      memberIds: data.members || [],
-
-      productId:
-        data.product !== null && data.product !== undefined
-          ? Number(data.product)
-          : null,
-    };
-  });
-};
-
-// ======================================================
-// CREATE CONVERSATION
-// ======================================================
+/**
+ * CREATE / GET CONVERSATION
+ *
+ * PostgreSQL:
+ * - User
+ * - Product
+ *
+ * MongoDB:
+ * - Conversation
+ *
+ * MongoDB hanya menyimpan ID PostgreSQL.
+ */
 exports.createConversation = async (req, res) => {
   try {
-    const senderId = parseUserId(req.user.id);
-    const receiverId = parseUserId(req.body.receiverId);
-    const productId = parseProductId(req.body.productId);
+    const senderId = Number(req.user.id);
+    const receiverId = Number(req.body.receiverId);
+    const productId = req.body.productId
+      ? Number(req.body.productId)
+      : null;
 
-    // ------------------------------------------
-    // Validasi sender
-    // ------------------------------------------
-    if (!senderId) {
+    // =========================
+    // VALIDASI USER
+    // =========================
+
+    if (!Number.isInteger(senderId) || senderId <= 0) {
       return res.status(401).json({
-        message: "User login tidak valid.",
+        message: "User tidak valid.",
       });
     }
 
-    // ------------------------------------------
-    // Validasi receiver
-    // ------------------------------------------
-    if (!receiverId) {
+    if (!Number.isInteger(receiverId) || receiverId <= 0) {
       return res.status(400).json({
-        message: "receiverId wajib diisi.",
+        message: "receiverId tidak valid.",
       });
     }
 
-    // ------------------------------------------
-    // Tidak boleh chat dengan diri sendiri
-    // ------------------------------------------
     if (senderId === receiverId) {
       return res.status(400).json({
         message: "Tidak dapat membuat percakapan dengan diri sendiri.",
       });
     }
 
-    // ------------------------------------------
-    // Pastikan receiver ada di PostgreSQL
-    // ------------------------------------------
-    const receiver = await prisma.user.findUnique({
-      where: {
-        id: receiverId,
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-      },
-    });
+    // =========================
+    // VALIDASI PRODUCT
+    // =========================
 
-    if (!receiver) {
-      return res.status(404).json({
-        message: "User penerima tidak ditemukan.",
+    if (
+      productId !== null &&
+      (!Number.isInteger(productId) || productId <= 0)
+    ) {
+      return res.status(400).json({
+        message: "productId tidak valid.",
       });
     }
 
-    // ------------------------------------------
-    // Jika productId dikirim,
-    // pastikan product ada di PostgreSQL
-    // ------------------------------------------
-    let product = null;
+    // =========================
+    // CARI CONVERSATION
+    // =========================
+    //
+    // Percakapan dibuat berdasarkan
+    // pasangan user.
+    //
+    // Produk hanya menjadi konteks.
+    //
 
-    if (productId) {
-      product = await prisma.product.findUnique({
-        where: {
-          id: productId,
-        },
-        select: {
-          id: true,
-          name: true,
-          description: true,
-          price: true,
-          stock: true,
-          category: true,
-          imageUrl: true,
-          isActive: true,
-          sellerId: true,
-        },
-      });
-
-      if (!product) {
-        return res.status(404).json({
-          message: "Produk tidak ditemukan.",
-        });
-      }
-    }
-
-    // ------------------------------------------
-    // Cari conversation yang sudah ada
-    // ------------------------------------------
     let conversation = await Conversation.findOne({
       members: {
         $all: [senderId, receiverId],
       },
     });
 
-    // ------------------------------------------
-    // Jika sudah ada
-    // ------------------------------------------
+    // =========================
+    // CONVERSATION SUDAH ADA
+    // =========================
+
     if (conversation) {
-      let shouldUpdate = false;
-
-      // Update product context jika product baru diberikan
+      // Kalau user sedang membuka produk tertentu,
+      // update konteks produk.
       if (
-        productId &&
-        Number(conversation.product) !== Number(productId)
+        productId !== null &&
+        conversation.productId !== productId
       ) {
-        conversation.product = productId;
-        shouldUpdate = true;
-      }
-
-      if (shouldUpdate) {
+        conversation.productId = productId;
         await conversation.save();
       }
 
-      const enriched = await enrichConversations([
-        conversation,
-      ]);
-
-      return res.status(200).json(enriched[0]);
+      return res.status(200).json(conversation);
     }
 
-    // ------------------------------------------
-    // Buat conversation baru
-    // ------------------------------------------
+    // =========================
+    // BUAT CONVERSATION BARU
+    // =========================
+
     conversation = await Conversation.create({
       members: [senderId, receiverId],
-      product: productId,
+      productId,
       lastMessage: "",
       lastSender: null,
       lastMessageAt: new Date(),
     });
 
-    // ------------------------------------------
-    // Ambil kembali + enrich
-    // ------------------------------------------
-    const enriched = await enrichConversations([
-      conversation,
-    ]);
-
-    return res.status(201).json(enriched[0]);
+    return res.status(201).json(conversation);
   } catch (err) {
     console.error("Create Conversation Error:", err);
 
@@ -308,22 +113,19 @@ exports.createConversation = async (req, res) => {
   }
 };
 
-// ======================================================
-// GET CONVERSATIONS
-// ======================================================
+/**
+ * GET SEMUA CONVERSATION USER
+ */
 exports.getConversations = async (req, res) => {
   try {
-    const userId = parseUserId(req.user.id);
+    const userId = Number(req.user.id);
 
-    if (!userId) {
+    if (!Number.isInteger(userId) || userId <= 0) {
       return res.status(401).json({
-        message: "User login tidak valid.",
+        message: "User tidak valid.",
       });
     }
 
-    // ------------------------------------------
-    // Ambil conversation dari MongoDB
-    // ------------------------------------------
     const conversations = await Conversation.find({
       members: userId,
     }).sort({
@@ -331,19 +133,13 @@ exports.getConversations = async (req, res) => {
       updatedAt: -1,
     });
 
-    // ------------------------------------------
-    // Jika tidak ada conversation
-    // ------------------------------------------
-    if (conversations.length === 0) {
-      return res.status(200).json([]);
-    }
-
-    // ------------------------------------------
-    // Hitung unread message
-    // ------------------------------------------
     const conversationIds = conversations.map(
       (conversation) => conversation._id
     );
+
+    // =========================
+    // HITUNG UNREAD
+    // =========================
 
     const unreadCounts = await Message.aggregate([
       {
@@ -372,32 +168,22 @@ exports.getConversations = async (req, res) => {
       },
     ]);
 
-    // ------------------------------------------
-    // Buat map unread count
-    // ------------------------------------------
     const unreadMap = {};
 
     unreadCounts.forEach((item) => {
       unreadMap[item._id.toString()] = item.count;
     });
 
-    // ------------------------------------------
-    // Gabungkan MongoDB + PostgreSQL
-    // ------------------------------------------
-    const enrichedConversations =
-      await enrichConversations(conversations);
+    // =========================
+    // RESPONSE
+    // =========================
 
-    // ------------------------------------------
-    // Tambahkan unreadCount
-    // ------------------------------------------
-    const result = enrichedConversations.map(
-      (conversation) => ({
-        ...conversation,
+    const result = conversations.map((conversation) => ({
+      ...conversation.toObject(),
 
-        unreadCount:
-          unreadMap[conversation._id.toString()] || 0,
-      })
-    );
+      unreadCount:
+        unreadMap[conversation._id.toString()] || 0,
+    }));
 
     return res.status(200).json(result);
   } catch (err) {
@@ -410,32 +196,24 @@ exports.getConversations = async (req, res) => {
   }
 };
 
-// ======================================================
-// DELETE CONVERSATION
-// ======================================================
+/**
+ * DELETE CONVERSATION
+ */
 exports.deleteConversation = async (req, res) => {
   try {
-    const userId = parseUserId(req.user.id);
     const { conversationId } = req.params;
+    const userId = Number(req.user.id);
 
-    if (!userId) {
+    if (!Number.isInteger(userId) || userId <= 0) {
       return res.status(401).json({
-        message: "User login tidak valid.",
+        message: "User tidak valid.",
       });
     }
 
-    // ------------------------------------------
-    // Validasi ObjectId MongoDB
-    // ------------------------------------------
-    if (!mongoose.Types.ObjectId.isValid(conversationId)) {
-      return res.status(400).json({
-        message: "conversationId tidak valid.",
-      });
-    }
+    // =========================
+    // CEK CONVERSATION
+    // =========================
 
-    // ------------------------------------------
-    // Pastikan conversation milik user
-    // ------------------------------------------
     const conversation = await Conversation.findOne({
       _id: conversationId,
       members: userId,
@@ -448,16 +226,18 @@ exports.deleteConversation = async (req, res) => {
       });
     }
 
-    // ------------------------------------------
-    // Hapus semua message
-    // ------------------------------------------
+    // =========================
+    // HAPUS PESAN
+    // =========================
+
     await Message.deleteMany({
       conversation: conversationId,
     });
 
-    // ------------------------------------------
-    // Hapus conversation
-    // ------------------------------------------
+    // =========================
+    // HAPUS CONVERSATION
+    // =========================
+
     await Conversation.findByIdAndDelete(
       conversationId
     );

@@ -2,15 +2,19 @@ const mongoose = require("mongoose");
 
 const messageSchema = new mongoose.Schema(
   {
+    // ID Conversation MongoDB
     conversation: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Conversation",
       required: true,
+      index: true,
     },
 
+    // ID User dari PostgreSQL
     sender: {
       type: Number,
       required: true,
+      index: true,
     },
 
     text: {
@@ -24,11 +28,13 @@ const messageSchema = new mongoose.Schema(
       default: "",
     },
 
-    product: {
+    // ID Product dari PostgreSQL
+    productId: {
       type: Number,
       default: null,
     },
 
+    // ID User PostgreSQL yang sudah membaca pesan
     readBy: [
       {
         type: Number,
@@ -39,5 +45,7 @@ const messageSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+messageSchema.index({ conversation: 1, createdAt: 1 });
 
 module.exports = mongoose.model("Message", messageSchema);
