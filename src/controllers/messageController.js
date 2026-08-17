@@ -1,17 +1,19 @@
 const Message = require("../models/Message");
 const Conversation = require("../models/Conversation");
+const prisma = require("../../config/prisma");
 
 const {
   getIO,
   getOnlineSocketId,
 } = require("../../socket/socket");
 
-/**
- * KIRIM PESAN
- */
+// =====================================================
+// KIRIM PESAN
+// =====================================================
+
 exports.sendMessage = async (req, res) => {
   try {
-    const userId = Number(req.user.id);
+    const senderId = Number(req.user.id);
 
     const {
       conversationId,
@@ -19,18 +21,11 @@ exports.sendMessage = async (req, res) => {
       productId,
     } = req.body;
 
-    const parsedProductId =
-      productId !== null &&
-      productId !== undefined &&
-      productId !== ""
-        ? Number(productId)
-        : null;
-
     // =========================
     // VALIDASI USER
     // =========================
 
-    if (!Number.isInteger(userId) || userId <= 0) {
+    if (!Number.isInteger(senderId) || senderId <= 0) {
       return res.status(401).json({
         message: "User tidak valid.",
       });
@@ -46,10 +41,11 @@ exports.sendMessage = async (req, res) => {
       });
     }
 
-    const conversation = await Conversation.findOne({
-      _id: conversationId,
-      members: userId,
-    });
+    const conversation =
+      await Conversation.findOne({
+        _id: conversationId,
+        members: senderId,
+      });
 
     if (!conversation) {
       return res.status(404).json({
@@ -59,44 +55,61 @@ exports.sendMessage = async (req, res) => {
     }
 
     // =========================
-    // VALIDASI PRODUCT ID
+    // VALIDASI PRODUCT
     // =========================
 
-    if (
-      parsedProductId !== null &&
-      (!Number.isInteger(parsedProductId) ||
-        parsedProductId <= 0)
-    ) {
-      return res.status(400).json({
-        message: "productId tidak valid.",
+    let validProductId = null;
+
+    if (productId !== null && productId !== undefined && productId !== "") {
+      validProductId = Number(productId);
+
+      if (
+        !Number.isInteger(validProductId) ||
+        validProductId <= 0
+      ) {
+        return res.status(400).json({
+          message: "productId tidak valid.",
+        });
+      }
+
+      // Cari product di PostgreSQL
+      const product = await prisma.product.findUnique({
+        where: {
+          id: validProductId,
+        },
       });
+
+      if (!product) {
+        return res.status(404).json({
+          message: "Produk tidak ditemukan.",
+        });
+      }
     }
 
     // =========================
     // VALIDASI PESAN
     // =========================
 
-    const cleanText =
-      typeof text === "string"
-        ? text.trim()
-        : "";
+    const messageText = typeof text === "string"
+      ? text.trim()
+      : "";
 
-    if (!cleanText && parsedProductId === null) {
+    if (!messageText && !validProductId) {
       return res.status(400).json({
-        message: "Pesan atau produk wajib diisi.",
+        message: "Pesan atau produk harus diisi.",
       });
     }
 
     // =========================
-    // BUAT MESSAGE
+    // SIMPAN MESSAGE
     // =========================
 
     const message = await Message.create({
       conversation: conversationId,
-      sender: userId,
-      text: cleanText,
-      productId: parsedProductId,
-      readBy: [userId],
+      sender: senderId,
+      text: messageText,
+      productId: validProductId,
+      readBy: [],
     });
 
     // =========================
@@ -104,36 +117,90 @@ exports.sendMessage = async (req, res) => {
     // =========================
 
     conversation.lastMessage =
-      cleanText || "Mengirimkan produk";
+      messageText || "Mengirimkan produk";
 
-    conversation.lastSender = userId;
+    conversation.lastSender = senderId;
     conversation.lastMessageAt = new Date();
 
-    // Kalau ada produk, simpan juga sebagai
-    // konteks produk terakhir.
-    if (parsedProductId !== null) {
-      conversation.productId = parsedProductId;
+    // Kalau pesan membawa produk,
+    // update konteks conversation juga.
+    if (validProductId) {
+      conversation.productId = validProductId;
     }
 
     await conversation.save();
 
     // =========================
-    // RESPONSE
+    // AMBIL USER DARI POSTGRESQL
     // =========================
-    //
-    // Tidak menggunakan populate.
-    //
-    // Frontend menerima:
-    // sender = PostgreSQL user ID
-    // productId = PostgreSQL product ID
-    //
 
-    const responseMessage = {
+    const sender = await prisma.user.findUnique({
+      where: {
+        id: senderId,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+      },
+    });
+
+    // =========================
+    // AMBIL PRODUCT DARI POSTGRESQL
+    // =========================
+
+    let product = null;
+
+    if (validProductId) {
+      product = await prisma.product.findUnique({
+        where: {
+          id: validProductId,
+        },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          price: true,
+          stock: true,
+          category: true,
+          imageUrl: true,
+          sellerId: true,
+          isActive: true,
+        },
+      });
+    }
+
+    // =========================
+    // RESPONSE UNTUK FRONTEND
+    // =========================
+
+    const data = {
       ...message.toObject(),
 
-      sender: userId,
+      sender: sender
+        ? {
+            id: sender.id,
+            name: sender.name,
+            email: sender.email,
+          }
+        : {
+            id: senderId,
+            name: "Pengguna",
+          },
 
-      productId: parsedProductId,
+      product: product
+        ? {
+            id: product.id,
+            name: product.name,
+            description: product.description,
+            price: product.price,
+            stock: product.stock,
+            category: product.category,
+            imageUrl: product.imageUrl,
+            sellerId: product.sellerId,
+            isActive: product.isActive,
+          }
+        : null,
     };
 
     // =========================
@@ -142,32 +209,33 @@ exports.sendMessage = async (req, res) => {
 
     const io = getIO();
 
-    if (io && conversation.members) {
-      const senderId = String(userId);
+    const senderIdString = String(senderId);
 
-      conversation.members.forEach((memberId) => {
-        const memberIdString = String(memberId);
+    conversation.members.forEach((memberId) => {
+      const receiverIdString = String(memberId);
 
-        // Jangan kirim kembali ke pengirim
-        if (memberIdString === senderId) {
-          return;
-        }
+      // Jangan kirim kembali ke pengirim
+      if (receiverIdString === senderIdString) {
+        return;
+      }
 
-        const socketId =
-          getOnlineSocketId(memberIdString);
+      const socketId =
+        getOnlineSocketId(receiverIdString);
 
-        if (socketId) {
-          io.to(socketId).emit(
-            "newMessage",
-            responseMessage
-          );
-        }
-      });
-    }
+      if (socketId) {
+        io.to(socketId).emit(
+          "newMessage",
+          data
+        );
+      }
+    });
 
-    return res.status(201).json(responseMessage);
+    return res.status(201).json(data);
   } catch (err) {
-    console.error("Send Message Error:", err);
+    console.error(
+      "Send Message Error:",
+      err
+    );
 
     return res.status(500).json({
       message: "Gagal mengirim pesan.",
@@ -176,26 +244,19 @@ exports.sendMessage = async (req, res) => {
   }
 };
 
-/**
- * GET SEMUA PESAN DALAM CONVERSATION
- */
+// =====================================================
+// GET SEMUA PESAN
+// =====================================================
+
 exports.getMessages = async (req, res) => {
   try {
+    const conversationId =
+      req.params.conversationId;
+
     const userId = Number(req.user.id);
-    const { conversationId } = req.params;
 
     // =========================
-    // VALIDASI USER
-    // =========================
-
-    if (!Number.isInteger(userId) || userId <= 0) {
-      return res.status(401).json({
-        message: "User tidak valid.",
-      });
-    }
-
-    // =========================
-    // PASTIKAN USER MEMBER
+    // CEK AKSES
     // =========================
 
     const conversation =
@@ -212,7 +273,7 @@ exports.getMessages = async (req, res) => {
     }
 
     // =========================
-    // AMBIL MESSAGE
+    // AMBIL PESAN MONGODB
     // =========================
 
     const messages = await Message.find({
@@ -222,23 +283,111 @@ exports.getMessages = async (req, res) => {
     });
 
     // =========================
-    // RESPONSE
+    // AMBIL SEMUA USER
     // =========================
 
-    const result = messages.map((message) => ({
-      ...message.toObject(),
+    const userIds = [
+      ...new Set(
+        messages.map((message) =>
+          Number(message.sender)
+        )
+      ),
+    ];
 
-      sender: Number(message.sender),
+    const users =
+      userIds.length > 0
+        ? await prisma.user.findMany({
+            where: {
+              id: {
+                in: userIds,
+              },
+            },
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          })
+        : [];
 
-      productId:
-        message.productId !== null
-          ? Number(message.productId)
-          : null,
-    }));
+    const userMap = {};
 
-    return res.json(result);
+    users.forEach((user) => {
+      userMap[user.id] = user;
+    });
+
+    // =========================
+    // AMBIL SEMUA PRODUCT
+    // =========================
+
+    const productIds = [
+      ...new Set(
+        messages
+          .map((message) => message.productId)
+          .filter(
+            (id) =>
+              id !== null &&
+              id !== undefined
+          )
+          .map(Number)
+      ),
+    ];
+
+    const products =
+      productIds.length > 0
+        ? await prisma.product.findMany({
+            where: {
+              id: {
+                in: productIds,
+              },
+            },
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              price: true,
+              stock: true,
+              category: true,
+              imageUrl: true,
+              sellerId: true,
+              isActive: true,
+            },
+          })
+        : [];
+
+    const productMap = {};
+
+    products.forEach((product) => {
+      productMap[product.id] = product;
+    });
+
+    // =========================
+    // GABUNG DATA
+    // =========================
+
+    const result = messages.map(
+      (message) => ({
+        ...message.toObject(),
+
+        sender:
+          userMap[message.sender] || {
+            id: message.sender,
+            name: "Pengguna",
+          },
+
+        product:
+          message.productId
+            ? productMap[message.productId] || null
+            : null,
+      })
+    );
+
+    return res.status(200).json(result);
   } catch (err) {
-    console.error("Get Messages Error:", err);
+    console.error(
+      "Get Messages Error:",
+      err
+    );
 
     return res.status(500).json({
       message: "Gagal mengambil pesan.",
@@ -247,19 +396,16 @@ exports.getMessages = async (req, res) => {
   }
 };
 
-/**
- * MARK MESSAGE AS READ
- */
+// =====================================================
+// MARK AS READ
+// =====================================================
+
 exports.markAsRead = async (req, res) => {
   try {
-    const userId = Number(req.user.id);
-    const { conversationId } = req.params;
+    const conversationId =
+      req.params.conversationId;
 
-    if (!Number.isInteger(userId) || userId <= 0) {
-      return res.status(401).json({
-        message: "User tidak valid.",
-      });
-    }
+    const userId = Number(req.user.id);
 
     // =========================
     // CEK CONVERSATION
@@ -273,7 +419,8 @@ exports.markAsRead = async (req, res) => {
 
     if (!conversation) {
       return res.status(404).json({
-        message: "Percakapan tidak ditemukan.",
+        message:
+          "Percakapan tidak ditemukan.",
       });
     }
 
@@ -281,63 +428,77 @@ exports.markAsRead = async (req, res) => {
     // UPDATE READ
     // =========================
 
-    const result = await Message.updateMany(
-      {
-        conversation: conversationId,
+    const result =
+      await Message.updateMany(
+        {
+          conversation: conversationId,
 
-        sender: {
-          $ne: userId,
-        },
+          sender: {
+            $ne: userId,
+          },
 
-        readBy: {
-          $ne: userId,
+          readBy: {
+            $ne: userId,
+          },
         },
-      },
-      {
-        $addToSet: {
-          readBy: userId,
-        },
-      }
-    );
+        {
+          $addToSet: {
+            readBy: userId,
+          },
+        }
+      );
 
     // =========================
-    // SOCKET READ NOTIFICATION
+    // SOCKET
     // =========================
 
     if (result.modifiedCount > 0) {
       const io = getIO();
 
-      conversation.members.forEach((memberId) => {
-        const memberIdString = String(memberId);
+      conversation.members.forEach(
+        (memberId) => {
+          const memberIdString =
+            String(memberId);
 
-        if (memberIdString === String(userId)) {
-          return;
+          if (
+            memberIdString ===
+            String(userId)
+          ) {
+            return;
+          }
+
+          const socketId =
+            getOnlineSocketId(
+              memberIdString
+            );
+
+          if (socketId) {
+            io.to(socketId).emit(
+              "messagesRead",
+              {
+                conversationId,
+                readerId: userId,
+              }
+            );
+          }
         }
-
-        const socketId =
-          getOnlineSocketId(memberIdString);
-
-        if (socketId) {
-          io.to(socketId).emit(
-            "messagesRead",
-            {
-              conversationId,
-              readerId: userId,
-            }
-          );
-        }
-      });
+      );
     }
 
-    return res.json({
+    return res.status(200).json({
       success: true,
-      modifiedCount: result.modifiedCount,
+      modifiedCount:
+        result.modifiedCount,
     });
   } catch (err) {
-    console.error("Mark As Read Error:", err);
+    console.error(
+      "Mark As Read Error:",
+      err
+    );
 
     return res.status(500).json({
-      message: "Gagal menandai pesan sebagai dibaca.",
+      message:
+        "Gagal menandai pesan sebagai sudah dibaca.",
       error: err.message,
     });
   }

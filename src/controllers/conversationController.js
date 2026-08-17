@@ -1,5 +1,111 @@
 const Conversation = require("../models/Conversation");
 const Message = require("../models/Message");
+const prisma = require("../../config/prisma");
+
+/**
+ * Ambil data User PostgreSQL berdasarkan ID
+ */
+const getUsersByIds = async (ids) => {
+  const userIds = [
+    ...new Set(
+      ids
+        .map(Number)
+        .filter((id) => Number.isInteger(id) && id > 0)
+    ),
+  ];
+
+  if (userIds.length === 0) {
+    return [];
+  }
+
+  return prisma.user.findMany({
+    where: {
+      id: {
+        in: userIds,
+      },
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+    },
+  });
+};
+
+/**
+ * Ambil data Product PostgreSQL berdasarkan ID
+ */
+const getProductById = async (productId) => {
+  if (!productId) return null;
+
+  return prisma.product.findUnique({
+    where: {
+      id: Number(productId),
+    },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      price: true,
+      stock: true,
+      category: true,
+      imageUrl: true,
+      sellerId: true,
+      isActive: true,
+    },
+  });
+};
+
+/**
+ * Format conversation MongoDB
+ * + User PostgreSQL
+ * + Product PostgreSQL
+ */
+const formatConversation = async (conversation) => {
+  const data = conversation.toObject
+    ? conversation.toObject()
+    : conversation;
+
+  // =========================
+  // USER
+  // =========================
+
+  const users = await getUsersByIds(data.members || []);
+
+  const userMap = new Map(
+    users.map((user) => [user.id, user])
+  );
+
+  const members = (data.members || []).map((userId) => {
+    const user = userMap.get(Number(userId));
+
+    return (
+      user || {
+        id: Number(userId),
+        name: "Pengguna",
+        email: "",
+      }
+    );
+  });
+
+  // =========================
+  // PRODUCT
+  // =========================
+
+  let product = null;
+
+  if (data.productId) {
+    product = await getProductById(data.productId);
+  }
+
+  return {
+    ...data,
+
+    members,
+
+    product,
+  };
+};
 
 /**
  * CREATE / GET CONVERSATION
@@ -10,16 +116,18 @@ const Message = require("../models/Message");
  *
  * MongoDB:
  * - Conversation
- *
- * MongoDB hanya menyimpan ID PostgreSQL.
  */
 exports.createConversation = async (req, res) => {
   try {
     const senderId = Number(req.user.id);
     const receiverId = Number(req.body.receiverId);
-    const productId = req.body.productId
-      ? Number(req.body.productId)
-      : null;
+
+    const productId =
+      req.body.productId !== undefined &&
+      req.body.productId !== null &&
+      req.body.productId !== ""
+        ? Number(req.body.productId)
+        : null;
 
     // =========================
     // VALIDASI USER
@@ -44,6 +152,27 @@ exports.createConversation = async (req, res) => {
     }
 
     // =========================
+    // VALIDASI RECEIVER
+    // =========================
+
+    const receiver = await prisma.user.findUnique({
+      where: {
+        id: receiverId,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+      },
+    });
+
+    if (!receiver) {
+      return res.status(404).json({
+        message: "User penjual tidak ditemukan.",
+      });
+    }
+
+    // =========================
     // VALIDASI PRODUCT
     // =========================
 
@@ -56,15 +185,35 @@ exports.createConversation = async (req, res) => {
       });
     }
 
+    if (productId !== null) {
+      const product = await prisma.product.findUnique({
+        where: {
+          id: productId,
+        },
+        select: {
+          id: true,
+          sellerId: true,
+          name: true,
+        },
+      });
+
+      if (!product) {
+        return res.status(404).json({
+          message: "Produk tidak ditemukan.",
+        });
+      }
+
+      // Pastikan receiver memang seller produk tersebut
+      if (Number(product.sellerId) !== receiverId) {
+        return res.status(400).json({
+          message: "User yang dipilih bukan penjual produk tersebut.",
+        });
+      }
+    }
+
     // =========================
     // CARI CONVERSATION
     // =========================
-    //
-    // Percakapan dibuat berdasarkan
-    // pasangan user.
-    //
-    // Produk hanya menjadi konteks.
-    //
 
     let conversation = await Conversation.findOne({
       members: {
@@ -73,12 +222,10 @@ exports.createConversation = async (req, res) => {
     });
 
     // =========================
-    // CONVERSATION SUDAH ADA
+    // SUDAH ADA
     // =========================
 
     if (conversation) {
-      // Kalau user sedang membuka produk tertentu,
-      // update konteks produk.
       if (
         productId !== null &&
         conversation.productId !== productId
@@ -87,11 +234,13 @@ exports.createConversation = async (req, res) => {
         await conversation.save();
       }
 
-      return res.status(200).json(conversation);
+      const formatted = await formatConversation(conversation);
+
+      return res.status(200).json(formatted);
     }
 
     // =========================
-    // BUAT CONVERSATION BARU
+    // BUAT BARU
     // =========================
 
     conversation = await Conversation.create({
@@ -102,7 +251,9 @@ exports.createConversation = async (req, res) => {
       lastMessageAt: new Date(),
     });
 
-    return res.status(201).json(conversation);
+    const formatted = await formatConversation(conversation);
+
+    return res.status(201).json(formatted);
   } catch (err) {
     console.error("Create Conversation Error:", err);
 
@@ -138,7 +289,7 @@ exports.getConversations = async (req, res) => {
     );
 
     // =========================
-    // HITUNG UNREAD
+    // UNREAD COUNT
     // =========================
 
     const unreadCounts = await Message.aggregate([
@@ -147,17 +298,14 @@ exports.getConversations = async (req, res) => {
           conversation: {
             $in: conversationIds,
           },
-
           sender: {
             $ne: userId,
           },
-
           readBy: {
             $ne: userId,
           },
         },
       },
-
       {
         $group: {
           _id: "$conversation",
@@ -175,15 +323,21 @@ exports.getConversations = async (req, res) => {
     });
 
     // =========================
-    // RESPONSE
+    // FORMAT
     // =========================
 
-    const result = conversations.map((conversation) => ({
-      ...conversation.toObject(),
+    const result = await Promise.all(
+      conversations.map(async (conversation) => {
+        const formatted = await formatConversation(conversation);
 
-      unreadCount:
-        unreadMap[conversation._id.toString()] || 0,
-    }));
+        return {
+          ...formatted,
+
+          unreadCount:
+            unreadMap[conversation._id.toString()] || 0,
+        };
+      })
+    );
 
     return res.status(200).json(result);
   } catch (err) {
@@ -211,7 +365,7 @@ exports.deleteConversation = async (req, res) => {
     }
 
     // =========================
-    // CEK CONVERSATION
+    // CEK ACCESS
     // =========================
 
     const conversation = await Conversation.findOne({
@@ -238,9 +392,7 @@ exports.deleteConversation = async (req, res) => {
     // HAPUS CONVERSATION
     // =========================
 
-    await Conversation.findByIdAndDelete(
-      conversationId
-    );
+    await Conversation.findByIdAndDelete(conversationId);
 
     return res.status(200).json({
       message: "Percakapan berhasil dihapus.",
