@@ -16,7 +16,7 @@ const conversationRoutes = require("./src/routes/conversationRoutes");
 const messageRoutes = require("./src/routes/messageRoutes");
 const paymentRoutes = require("./src/routes/paymentRoutes");
 const {handleStripeWebhook,} = require("./src/controllers/paymentController");
-const galleryRoutes = require("./src/routes/galery");
+const galleryRoutes = require("./src/routes/gallery");
 
 const http = require("http");
 const { Server } = require("socket.io");
