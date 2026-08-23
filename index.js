@@ -14,6 +14,9 @@ const orderRoutes = require("./src/routes/order");
 const wishlistRoutes = require("./src/routes/wishlistRoutes");
 const conversationRoutes = require("./src/routes/conversationRoutes");
 const messageRoutes = require("./src/routes/messageRoutes");
+const paymentRoutes = require("./src/routes/paymentRoutes");
+const {handleStripeWebhook,} = require("./src/controllers/paymentController");
+const gallery = require("./src/routes/galery");
 
 const http = require("http");
 const { Server } = require("socket.io");
@@ -61,6 +64,8 @@ app.use(cors({
     allowedHeaders: ["Content-Type","Authorization","ngrok-skip-browser-warning",],
   }));
 
+app.post("/api/payment/webhook",express.raw({ type: "application/json" }),handleStripeWebhook);
+
 app.use(express.json());
 app.use(express.urlencoded({extended: true,}));
 
@@ -91,7 +96,7 @@ app.use("/api/orders",orderRoutes);
 app.use("/api/wishlist",wishlistRoutes);
 app.use("/api/conversations",conversationRoutes);
 app.use("/api/messages",messageRoutes);
-
+app.use("/api/payment", paymentRoutes);
 // =======================
 // Health Check
 // =======================
