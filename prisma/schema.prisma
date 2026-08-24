@@ -116,6 +116,8 @@ enum OrderStatus {
   paid
   shipped
   completed
+  cancelled
+  failed 
 }
 
 model Gallery {

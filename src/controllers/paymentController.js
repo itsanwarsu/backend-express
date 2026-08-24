@@ -62,7 +62,29 @@ const createCheckoutSession = async (req, res) => {
       });
     }
 
+    // Validasi harga tiap item sebelum dikirim ke Stripe
+    for (const item of order.items) {
+      const price = Number(item.price);
+      const quantity = Number(item.quantity);
+
+      if (!Number.isFinite(price) || price <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Harga tidak valid untuk produk "${item.product.name}"`,
+        });
+      }
+
+      if (!Number.isInteger(quantity) || quantity <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Jumlah tidak valid untuk produk "${item.product.name}"`,
+        });
+      }
+    }
+
     // Buat item Stripe berdasarkan harga OrderItem
+    // Catatan: IDR adalah zero-decimal currency di Stripe,
+    // jadi unit_amount TIDAK perlu dikali 100.
     const lineItems = order.items.map((item) => ({
       price_data: {
         currency: "idr",
@@ -71,9 +93,7 @@ const createCheckoutSession = async (req, res) => {
           name: item.product.name,
         },
 
-        unit_amount: Math.round(
-          Number(item.price)
-        ),
+        unit_amount: Math.round(Number(item.price)),
       },
 
       quantity: item.quantity,
@@ -129,6 +149,10 @@ const createCheckoutSession = async (req, res) => {
 // =====================================
 // STRIPE WEBHOOK
 // =====================================
+// PENTING: route ini WAJIB pakai express.raw({ type: "application/json" })
+// sebagai middleware, dan didaftarkan SEBELUM express.json() global,
+// karena stripe.webhooks.constructEvent butuh raw body (Buffer),
+// bukan hasil parsing JSON. Lihat contoh route di bawah.
 const handleStripeWebhook = async (req, res) => {
   const signature = req.headers["stripe-signature"];
 
@@ -153,8 +177,19 @@ const handleStripeWebhook = async (req, res) => {
 
   try {
     switch (event.type) {
-      case "checkout.session.completed": {
+      case "checkout.session.completed":
+      case "checkout.session.async_payment_succeeded": {
         const session = event.data.object;
+
+        // checkout.session.completed bisa terjadi walau pembayaran
+        // belum lunas (mis. metode async seperti VA/QRIS/e-wallet
+        // yang butuh konfirmasi tambahan). Pastikan sudah "paid".
+        if (session.payment_status !== "paid") {
+          console.log(
+            `Session ${session.id} belum "paid" (status: ${session.payment_status}), menunggu event berikutnya`
+          );
+          break;
+        }
 
         const orderId = Number(
           session.metadata?.orderId
@@ -173,6 +208,32 @@ const handleStripeWebhook = async (req, res) => {
             ? session.payment_intent
             : null;
 
+        const existingOrder = await prisma.order.findUnique({
+          where: { id: orderId },
+        });
+
+        if (!existingOrder) {
+          console.error(`Order ${orderId} tidak ditemukan di database`);
+          break;
+        }
+
+        // Cegah pemrosesan ganda jika Stripe mengirim event yang sama
+        // lebih dari sekali (retry) atau session tidak cocok dengan order.
+        if (existingOrder.status === "paid") {
+          console.log(`Order ${orderId} sudah berstatus paid, skip`);
+          break;
+        }
+
+        if (
+          existingOrder.stripeSessionId &&
+          existingOrder.stripeSessionId !== session.id
+        ) {
+          console.error(
+            `Session ID tidak cocok untuk order ${orderId}, kemungkinan data tidak konsisten`
+          );
+          break;
+        }
+
         await prisma.order.update({
           where: {
             id: orderId,
@@ -188,6 +249,18 @@ const handleStripeWebhook = async (req, res) => {
         console.log(
           `Order ${orderId} berhasil dibayar`
         );
+
+        break;
+      }
+
+      case "checkout.session.async_payment_failed": {
+        const session = event.data.object;
+        const orderId = Number(session.metadata?.orderId);
+
+        if (Number.isInteger(orderId)) {
+          console.log(`Pembayaran gagal untuk order ${orderId}`);
+          // Opsional: update status order jadi "failed"/"cancelled" di sini
+        }
 
         break;
       }
@@ -219,3 +292,4 @@ module.exports = {
   createCheckoutSession,
   handleStripeWebhook,
 };
+

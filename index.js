@@ -40,7 +40,7 @@ const PORT = process.env.PORT || 3000;
 (async () => {
   try {await hubungkanDB();
     console.log('✅ Database connected, starting server...');
-    
+
 // =======================
 // Start Server (pindahkan ke sini)
 // =======================
@@ -126,8 +126,14 @@ res.status(404).json({message:"Endpoint tidak ditemukan",});
 app.use((err, req, res, next) => {
 console.error("Global Error Handler:",err);
 
+const isProduction = process.env.NODE_ENV === "production";
+
 res.status(err.status || 500).json({
-message:err.message ||"Terjadi kesalahan pada server",error: err,});
+  message: err.message || "Terjadi kesalahan pada server",
+  // Detail error (stack trace, dsb) hanya dikirim ke client
+  // saat BUKAN production, agar tidak bocor ke publik.
+  ...(isProduction ? {} : { error: err.stack || err }),
+});
 });
 
 // =======================
