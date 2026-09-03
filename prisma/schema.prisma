@@ -20,6 +20,7 @@ model User {
   orders           Order[]
   products         Product[] @relation("SellerProducts")
   wishlistProducts Product[] @relation("UserWishlist")
+  reviews          Review[]
 }
 
 model Product {
@@ -39,6 +40,7 @@ model Product {
   orderItems    OrderItem[]
   seller        User        @relation("SellerProducts", fields: [sellerId], references: [id])
   wishlistedBy  User[]      @relation("UserWishlist")
+  reviews       Review[]
 
   @@index([sellerId])
   @@index([category])
@@ -127,4 +129,20 @@ model Gallery {
   order     Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Review {
+  id        Int      @id @default(autoincrement())
+  productId Int      @map("product_id")
+  userId    Int      @map("user_id")
+  rating    Int
+  comment   String
+  imageUrl  String?  @map("image_url")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("reviews")
 }

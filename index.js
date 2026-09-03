@@ -17,6 +17,7 @@ const messageRoutes = require("./src/routes/messageRoutes");
 const paymentRoutes = require("./src/routes/paymentRoutes");
 const {handleStripeWebhook,} = require("./src/controllers/paymentController");
 const galleryRoutes = require("./src/routes/gallery");
+const reviewRoutes = require ("./src/routes/reviewRoutes.js");
 
 const http = require("http");
 const { Server } = require("socket.io");
@@ -98,6 +99,7 @@ app.use("/api/conversations",conversationRoutes);
 app.use("/api/messages",messageRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/gallery", galleryRoutes); // path URL harus "gallery" (benar) walau nama file "galery"
+app.use("/reviews", reviewRoutes);
 
 // =======================
 // Health Check
