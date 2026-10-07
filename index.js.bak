@@ -4,10 +4,6 @@ require("dotenv").config();
 // expressjs
 const express = require("express");
 const cors = require("cors");
-const http = require("http");
-const { Server } = require("socket.io");
-const passport = require("passport");
-
 const hubungkanDB = require("./config/db");
 
 // routes
@@ -22,10 +18,12 @@ const paymentRoutes = require("./src/routes/paymentRoutes");
 const galleryRoutes = require("./src/routes/gallery");
 const reviewRoutes = require("./src/routes/reviewRoutes.js");
 
+const http = require("http");
+const { Server } = require("socket.io");
 const { initializeSocket } = require("./socket/socket");
-const uploadError = require("./src/middleware/uploadError");
 
 // Google OAuth
+const passport = require("passport");
 require("./config/passport");
 
 // inisialisasi
@@ -33,16 +31,6 @@ const app = express();
 const server = http.createServer(app);
 
 const PORT = process.env.PORT || 3000;
-
-// Origin yang diizinkan (pisahkan dengan koma kalau lebih dari satu)
-const ALLOWED_ORIGINS = (
-  process.env.CORS_ORIGINS ||
-  process.env.FRONTEND_URL ||
-  "https://sealens.duckdns.org"
-)
-  .split(",")
-  .map((o) => o.trim().replace(/\/+$/, ""))
-  .filter(Boolean);
 
 // =======================
 // Database & Start Server
@@ -68,7 +56,7 @@ const ALLOWED_ORIGINS = (
 
 app.use(
   cors({
-    origin: ALLOWED_ORIGINS,
+    origin: "*",
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: [
       "Content-Type",
@@ -88,6 +76,18 @@ app.use(express.urlencoded({ extended: true }));
 app.use(passport.initialize());
 
 // =======================
+// Bypass warning ngrok
+// =======================
+
+app.use((req, res, next) => {
+  res.setHeader("ngrok-skip-browser-warning", "true");
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
+// =======================
 // Routes
 // =======================
 
@@ -100,8 +100,7 @@ app.use("/api/conversations", conversationRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/gallery", galleryRoutes);
-app.use("/api/reviews", reviewRoutes);
-app.use("/reviews", reviewRoutes); // kompatibilitas frontend lama
+app.use("/reviews", reviewRoutes);
 
 // =======================
 // Health Check
@@ -124,12 +123,6 @@ app.use((req, res) => {
 });
 
 // =======================
-// Error Handler Upload (multer)
-// =======================
-
-app.use(uploadError);
-
-// =======================
 // Global Error Handler
 // =======================
 
@@ -139,9 +132,7 @@ app.use((err, req, res, next) => {
   const isProduction = process.env.NODE_ENV === "production";
 
   res.status(err.status || 500).json({
-    message: isProduction
-      ? "Terjadi kesalahan pada server"
-      : err.message || "Terjadi kesalahan pada server",
+    message: err.message || "Terjadi kesalahan pada server",
     // Detail error hanya dikirim saat BUKAN production
     ...(isProduction ? {} : { error: err.stack || err }),
   });
@@ -153,7 +144,7 @@ app.use((err, req, res, next) => {
 
 const io = new Server(server, {
   cors: {
-    origin: ALLOWED_ORIGINS,
+    origin: "*",
     methods: ["GET", "POST", "PUT", "DELETE"],
   },
 });
@@ -170,19 +161,12 @@ process.on("unhandledRejection", (reason, promise) => {
 
 process.on("uncaughtException", (err) => {
   console.error("Uncaught Exception thrown:", err);
-  // Keluar supaya PM2 menghidupkan ulang proses dalam kondisi bersih
-  process.exit(1);
 });
 
-const shutdown = (signal) => {
-  console.log(`Menerima sinyal ${signal}, menutup server...`);
+process.on("SIGTERM", () => {
+  console.log("Menerima sinyal SIGTERM, menutup server...");
   server.close(() => {
     console.log("Server berhasil ditutup secara aman.");
     process.exit(0);
   });
-  // Paksa keluar kalau koneksi menggantung
-  setTimeout(() => process.exit(1), 10000).unref();
-};
-
-process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("SIGINT", () => shutdown("SIGINT"));
+});

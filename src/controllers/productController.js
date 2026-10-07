@@ -3,89 +3,88 @@ const cloudinary = require("../../config/cloudinary");
 const streamifier = require("streamifier");
 
 // =======================
-// HELPER UPLOAD CLOUDINARY
+// HELPER
 // =======================
-const uploadToCloudinary = (fileBuffer) => {
-  return new Promise((resolve, reject) => {
+const uploadToCloudinary = (fileBuffer) =>
+  new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
-      {
-        folder: "products",
-      },
-      (error, result) => {
-        if (error) return reject(error);
-        resolve(result);
-      }
+      { folder: "products" },
+      (error, result) => (error ? reject(error) : resolve(result))
     );
-
     streamifier.createReadStream(fileBuffer).pipe(stream);
   });
+
+// Upload banyak file sekaligus -> [{ url, publicId }]
+const uploadMany = async (files = []) => {
+  const results = await Promise.all(
+    files.map((f) => uploadToCloudinary(f.buffer))
+  );
+  return results.map((r) => ({ url: r.secure_url, publicId: r.public_id }));
+};
+
+const destroyMany = (items = []) =>
+  Promise.allSettled(
+    items
+      .filter((i) => i && i.publicId)
+      .map((i) => cloudinary.uploader.destroy(i.publicId))
+  );
+
+// Foto produk lama (sebelum kolom images ada) dikonversi ke format baru
+const currentImages = (product) => {
+  if (Array.isArray(product.images)) return product.images;
+  if (product.imageUrl) {
+    return [{ url: product.imageUrl, publicId: product.imagePublicId || "" }];
+  }
+  return [];
+};
+
+const sellerInclude = {
+  seller: { select: { id: true, name: true, email: true } },
 };
 
 // =======================
 // CREATE PRODUCT
 // =======================
 exports.createProduct = async (req, res) => {
+  let uploaded = [];
+
   try {
     const { name, description, price, stock, category } = req.body;
 
-    if (!name || !price || !category) {
+    if (!name || price === undefined || price === "" || !category) {
       return res.status(400).json({
         message: "Nama, harga, dan kategori wajib diisi",
       });
     }
 
-    let imageUrl = "";
-    let imagePublicId = "";
-
-    if (req.file && req.file.buffer) {
-      const result = await uploadToCloudinary(req.file.buffer);
-
-      imageUrl = result.secure_url;
-      imagePublicId = result.public_id;
-    }
-
     const sellerId = Number(req.user.id);
 
     if (!sellerId) {
-      return res.status(401).json({
-        message: "User tidak valid",
-      });
+      return res.status(401).json({ message: "User tidak valid" });
     }
 
-    // Pastikan seller memang ada
-    const seller = await prisma.user.findUnique({
-      where: {
-        id: sellerId,
-      },
-    });
-
-    if (!seller) {
-      return res.status(404).json({
-        message: "Seller tidak ditemukan",
-      });
+    if (!req.files || req.files.length === 0) {
+      return res
+        .status(400)
+        .json({ message: "Minimal satu gambar wajib diunggah" });
     }
+
+    uploaded = await uploadMany(req.files);
 
     const product = await prisma.product.create({
       data: {
-        name,
+        name: name.trim(),
         description: description || "",
         price: Number(price),
         stock: Number(stock) || 0,
         category,
-        imageUrl,
-        imagePublicId,
+        imageUrl: uploaded[0].url, // foto utama
+        imagePublicId: uploaded[0].publicId,
+        images: uploaded, // semua foto
         isActive: true,
         sellerId,
       },
-      include: {
-        seller: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-      },
+      include: sellerInclude,
     });
 
     return res.status(201).json({
@@ -93,11 +92,11 @@ exports.createProduct = async (req, res) => {
       product,
     });
   } catch (err) {
+    await destroyMany(uploaded); // jangan tinggalkan foto yatim di Cloudinary
     console.error("Upload/Create Error:", err);
 
     return res.status(500).json({
       message: "Terjadi kesalahan pada server",
-      error: err.message || err,
     });
   }
 };
@@ -112,30 +111,11 @@ exports.getProducts = async (req, res) => {
     const products = await prisma.product.findMany({
       where: {
         isActive: true,
-
-        ...(keyword
-          ? {
-              name: {
-                contains: keyword,
-                mode: "insensitive",
-              },
-            }
-          : {}),
+        // MySQL sudah case-insensitive, jangan pakai mode: "insensitive"
+        ...(keyword ? { name: { contains: keyword } } : {}),
       },
-
-      orderBy: {
-        createdAt: "desc",
-      },
-
-      include: {
-        seller: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-      },
+      orderBy: { createdAt: "desc" },
+      include: sellerInclude,
     });
 
     return res.json(products);
@@ -143,7 +123,7 @@ exports.getProducts = async (req, res) => {
     console.error("Get Products Error:", err);
 
     return res.status(500).json({
-      message: err.message,
+      message: "Terjadi kesalahan pada server",
     });
   }
 };
@@ -162,25 +142,12 @@ exports.getProduct = async (req, res) => {
     }
 
     const product = await prisma.product.findUnique({
-      where: {
-        id: productId,
-      },
-
-      include: {
-        seller: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-      },
+      where: { id: productId },
+      include: sellerInclude,
     });
 
     if (!product) {
-      return res.status(404).json({
-        message: "Produk tidak ditemukan",
-      });
+      return res.status(404).json({ message: "Produk tidak ditemukan" });
     }
 
     return res.json(product);
@@ -188,7 +155,7 @@ exports.getProduct = async (req, res) => {
     console.error("Get Product Error:", err);
 
     return res.status(500).json({
-      message: err.message,
+      message: "Terjadi kesalahan pada server",
     });
   }
 };
@@ -197,6 +164,8 @@ exports.getProduct = async (req, res) => {
 // UPDATE PRODUCT
 // =======================
 exports.updateProduct = async (req, res) => {
+  let uploaded = [];
+
   try {
     const productId = Number(req.params.id);
 
@@ -207,41 +176,57 @@ exports.updateProduct = async (req, res) => {
     }
 
     const product = await prisma.product.findUnique({
-      where: {
-        id: productId,
-      },
+      where: { id: productId },
     });
 
     if (!product) {
-      return res.status(404).json({
-        message: "Produk tidak ditemukan",
-      });
+      return res.status(404).json({ message: "Produk tidak ditemukan" });
     }
 
-    let imageUrl = product.imageUrl;
-    let imagePublicId = product.imagePublicId;
+    const existing = currentImages(product);
 
-    // Jika upload gambar baru
-    if (req.file && req.file.buffer) {
-      // Hapus gambar lama
-      if (product.imagePublicId) {
-        await cloudinary.uploader.destroy(product.imagePublicId);
+    // keepImages = JSON array berisi publicId foto lama yang dipertahankan.
+    // Kalau tidak dikirim, semua foto lama dipertahankan.
+    let keep = existing;
+
+    if (req.body.keepImages !== undefined) {
+      let ids;
+      try {
+        ids = JSON.parse(req.body.keepImages);
+        if (!Array.isArray(ids)) throw new Error("bukan array");
+      } catch (e) {
+        return res.status(400).json({ message: "keepImages tidak valid" });
       }
-
-      // Upload gambar baru
-      const result = await uploadToCloudinary(req.file.buffer);
-
-      imageUrl = result.secure_url;
-      imagePublicId = result.public_id;
+      keep = existing.filter((i) => ids.includes(i.publicId));
     }
+
+    const newCount = req.files ? req.files.length : 0;
+
+    if (keep.length + newCount > 10) {
+      return res.status(400).json({ message: "Maksimal 10 foto" });
+    }
+
+    if (keep.length + newCount === 0) {
+      return res
+        .status(400)
+        .json({ message: "Produk harus punya minimal satu foto" });
+    }
+
+    uploaded = await uploadMany(req.files || []);
+
+    const finalImages = [...keep, ...uploaded];
+    const removed = existing.filter(
+      (i) => !keep.some((k) => k.publicId === i.publicId)
+    );
 
     const data = {
-      imageUrl,
-      imagePublicId,
+      images: finalImages,
+      imageUrl: finalImages[0].url,
+      imagePublicId: finalImages[0].publicId,
     };
 
     if (req.body.name !== undefined) {
-      data.name = req.body.name;
+      data.name = req.body.name.trim();
     }
 
     if (req.body.description !== undefined) {
@@ -266,33 +251,24 @@ exports.updateProduct = async (req, res) => {
     }
 
     const updatedProduct = await prisma.product.update({
-      where: {
-        id: productId,
-      },
-
+      where: { id: productId },
       data,
-
-      include: {
-        seller: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-      },
+      include: sellerInclude,
     });
+
+    // Hapus foto lama di Cloudinary hanya setelah DB berhasil
+    await destroyMany(removed);
 
     return res.json({
       message: "Produk berhasil diperbarui",
       product: updatedProduct,
     });
   } catch (err) {
+    await destroyMany(uploaded);
     console.error("Update Product Error:", err);
 
     return res.status(500).json({
       message: "Terjadi kesalahan pada server",
-      error: err.message || err,
     });
   }
 };
@@ -311,37 +287,23 @@ exports.deleteProduct = async (req, res) => {
     }
 
     const product = await prisma.product.findUnique({
-      where: {
-        id: productId,
-      },
+      where: { id: productId },
     });
 
     if (!product) {
-      return res.status(404).json({
-        message: "Produk tidak ditemukan",
-      });
+      return res.status(404).json({ message: "Produk tidak ditemukan" });
     }
 
-    // Hapus gambar dari Cloudinary
-    if (product.imagePublicId) {
-      await cloudinary.uploader.destroy(product.imagePublicId);
-    }
+    // Hapus record dulu, baru fotonya
+    await prisma.product.delete({ where: { id: productId } });
+    await destroyMany(currentImages(product));
 
-    await prisma.product.delete({
-      where: {
-        id: productId,
-      },
-    });
-
-    return res.json({
-      message: "Produk berhasil dihapus",
-    });
+    return res.json({ message: "Produk berhasil dihapus" });
   } catch (err) {
     console.error("Delete Product Error:", err);
 
     return res.status(500).json({
       message: "Terjadi kesalahan pada server",
-      error: err.message || err,
     });
   }
 };

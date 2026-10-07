@@ -2,6 +2,19 @@ const prisma = require("../../config/prisma");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
+if (!process.env.JWT_SECRET) {
+  throw new Error("JWT_SECRET belum diset di .env");
+}
+
+const FRONTEND_URL = (
+  process.env.FRONTEND_URL || "https://sealens.duckdns.org"
+).replace(/\/+$/, "");
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const normalizeEmail = (email) =>
+  typeof email === "string" ? email.trim().toLowerCase() : "";
+
 // ================= CREATE JWT =================
 const generateToken = (user) => {
   return jwt.sign(
@@ -19,13 +32,30 @@ const generateToken = (user) => {
 // ================= REGISTER =================
 exports.register = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, password } = req.body;
+    const email = normalizeEmail(req.body.email);
+
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        message: "Nama, email, dan password wajib diisi",
+      });
+    }
+
+    if (!EMAIL_REGEX.test(email)) {
+      return res.status(400).json({
+        message: "Format email tidak valid",
+      });
+    }
+
+    if (typeof password !== "string" || password.length < 8) {
+      return res.status(400).json({
+        message: "Password minimal 8 karakter",
+      });
+    }
 
     // Cek apakah email sudah digunakan
     const existingUser = await prisma.user.findUnique({
-      where: {
-        email,
-      },
+      where: { email },
     });
 
     if (existingUser) {
@@ -37,10 +67,10 @@ exports.register = async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Buat user di PostgreSQL
+    // Buat user di MySQL
     await prisma.user.create({
       data: {
-        name,
+        name: name.trim(),
         email,
         password: hashedPassword,
         provider: "local",
@@ -52,10 +82,17 @@ exports.register = async (req, res) => {
       message: "Pendaftaran berhasil",
     });
   } catch (error) {
+    // P2002 = unique constraint (email didaftarkan bersamaan)
+    if (error.code === "P2002") {
+      return res.status(400).json({
+        message: "Email sudah terdaftar",
+      });
+    }
+
     console.error("Register error:", error);
 
     res.status(500).json({
-      message: error.message,
+      message: "Terjadi kesalahan pada server",
     });
   }
 };
@@ -63,13 +100,18 @@ exports.register = async (req, res) => {
 // ================= LOGIN =================
 exports.login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { password } = req.body;
+    const email = normalizeEmail(req.body.email);
 
-    // Cari user di PostgreSQL
+    if (!email || !password || typeof password !== "string") {
+      return res.status(400).json({
+        message: "Email dan password wajib diisi",
+      });
+    }
+
+    // Cari user di MySQL
     const user = await prisma.user.findUnique({
-      where: {
-        email,
-      },
+      where: { email },
     });
 
     // User tidak ada atau akun Google tidak memiliki password
@@ -104,7 +146,7 @@ exports.login = async (req, res) => {
     console.error("Login error:", error);
 
     res.status(500).json({
-      message: error.message,
+      message: "Terjadi kesalahan pada server",
     });
   }
 };
@@ -115,22 +157,18 @@ exports.googleCallback = async (req, res) => {
     const user = req.user;
 
     if (!user) {
-      return res.status(401).json({
-        message: "Autentikasi Google gagal",
-      });
+      return res.redirect(`${FRONTEND_URL}/login?error=google_failed`);
     }
 
     const token = generateToken(user);
 
     res.redirect(
-      `https://ecommerce-app-sage-alpha.vercel.app/google-success?token=${token}`
+      `${FRONTEND_URL}/google-success?token=${encodeURIComponent(token)}`
     );
   } catch (error) {
     console.error("Google callback error:", error);
 
-    res.status(500).json({
-      message: error.message,
-    });
+    res.redirect(`${FRONTEND_URL}/login?error=server_error`);
   }
 };
 
@@ -166,7 +204,7 @@ exports.profile = async (req, res) => {
     console.error("Profile error:", error);
 
     res.status(500).json({
-      message: error.message,
+      message: "Terjadi kesalahan pada server",
     });
   }
 };
